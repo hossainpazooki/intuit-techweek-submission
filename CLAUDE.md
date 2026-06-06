@@ -3,6 +3,15 @@
 Guidance for Claude Code working in this repo (Intuit TechWeek SMB Underwriting
 Challenge submission). Read this first; it encodes how I want you to work here.
 
+## Where this runs (read before anything else)
+
+I use Claude Code **from the web** (Linux cloud), and also locally on **Windows**.
+The pipeline itself is **platform-agnostic** — it runs unchanged on either. Only a
+couple of notes below are Windows-local workarounds; they are explicitly tagged
+**[Windows-local only]** and you can ignore them on the web/Linux. When in doubt,
+assume Linux and plain `python`. Because I'm usually on the web, **there is no local
+fallback — always commit and push your work to `origin`** (see Git below).
+
 ## What this repo is
 
 Our solution to the SMB Underwriting Challenge. Authoritative docs:
@@ -18,27 +27,31 @@ The modeling spine is a **weekly competing-risks discrete-time hazard** (default
 payoff); Deliverables A (PD + NPV policy), B (cohort trajectory), C (counterfactuals)
 all read off one fit. Baseline tier is implemented and passes the validator.
 
-## Commands (Windows / PowerShell)
+## Commands
 
-```powershell
-# regenerate A/B/C and run the official validator (must print RESULT: PASS)
-PYTHONUTF8=1 python scripts/run_all.py
-PYTHONUTF8=1 python scripts/validate.py     # validator only
-PYTHONUTF8=1 python scripts/eda.py          # premise validation / exploration
+Cross-platform (web/Linux and Windows). On the web, run them exactly as written.
 
-unzip dataset/dataset-compressed.zip -d dataset/   # if train/validation/test.csv missing
+```bash
+pip install -r requirements-dev.txt                 # scikit-learn + matplotlib
+unzip dataset/dataset-compressed.zip -d dataset/    # if train/validation/test.csv missing
+
+python scripts/run_all.py     # regenerate A/B/C + validate (must print RESULT: PASS)
+python scripts/validate.py    # validator only
+python scripts/eda.py         # premise validation / exploration
 ```
+
+**[Windows-local only]** the local Windows console is cp1252, so there I prefix
+`PYTHONUTF8=1 python ...` and keep `print()` ASCII-only. On the web/Linux UTF-8 is the
+default — **ignore that prefix and the ASCII-print rule**; plain `python` is correct.
 
 ## Environment constraints (hard)
 
-- **Python 3.14 on Windows.** Stack is **sklearn-only** by necessity: 3.14 lacks
-  wheels for lightgbm/xgboost/lifelines/econml/doubleml. Use
-  `HistGradientBoostingClassifier` (native NaN + sample_weight) + `IsotonicRegression`;
-  hand-roll anything else. **Do not add those missing deps** — if a method needs them,
-  it's a `[FUTURE]` tier, not something to pip-install.
-- **Always run python as `PYTHONUTF8=1 python ...`** and keep console prints
-  **ASCII-only** (the cp1252 console errors on `pi`, `~`, `<=`, etc.). Use unicode
-  freely in `.md` files, never in `print()`.
+- **sklearn-only stack.** Use `HistGradientBoostingClassifier` (native NaN +
+  sample_weight) + `IsotonicRegression`; hand-roll anything else. **Do not add**
+  lightgbm/xgboost/lifelines/econml/doubleml — they're a `[FUTURE]` tier, not a
+  pip-install. (Original reason: the local box is Python 3.14, which has no wheels for
+  them. The pipeline imports only sklearn, so it runs on any Python ≥3.11 incl. the
+  web runtime — keep it that way so behavior is identical everywhere.)
 - Model features are kept **numeric with NaN preserved** (no `category` dtype) to
   avoid cross-split alignment bugs. Keep it that way unless you have a strong reason.
 
@@ -89,9 +102,11 @@ trust a result:
 
 - This is a **private** repo; `origin` = `hossainpazooki/intuit-techweek-submission`,
   `upstream` = the official Intuit repo (pull only, never push).
-- **I often won't have local access** — when work is at a good checkpoint, commit and
-  **push to `origin`**, then confirm sync (`0 ahead / 0 behind`). Don't leave finished
-  work uncommitted.
+- **I usually run from the web, so there is no local fallback — never leave finished
+  work only in the working tree.** At every good checkpoint, commit and **push to
+  `origin`**, then confirm sync (`0 ahead / 0 behind`). If a session ends with unpushed
+  commits, that work is effectively lost to me. (This is the *opposite* of my other
+  repos' "output the command, don't run it" policy — here, you run it.)
 - Commit/push when I ask or at a natural checkpoint; branch off `master` for anything
   risky. End commit messages with:
   `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`

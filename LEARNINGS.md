@@ -7,6 +7,12 @@ while building it. Every empirical number here was recomputed from the data
 (`scripts/eda.py`); the technical claims were adversarially verified
 (`docs/VERIFICATION.md`).
 
+> **Platform note.** This was developed locally on Windows, but the repo is normally
+> driven from **Claude Code on the web (Linux cloud)**, where the pipeline runs
+> unchanged with plain `python`. Anything below tagged **[Windows-local only]** is a
+> Windows-console workaround you can ignore on the web. The modeling logic is
+> platform-agnostic; only the shell ergonomics differ.
+
 ---
 
 ## 1. The submission validator is the law (and it has traps)
@@ -54,21 +60,26 @@ while building it. Every empirical number here was recomputed from the data
   has outcomes, so calibration on validation is itself conditioned on the legacy
   policy. Don't treat validation as a clean labeled holdout.
 
-## 3. Environment & stack (Python 3.14 on Windows)
+## 3. Environment & stack
 
-- **sklearn-only by necessity.** Python 3.14 has no wheels for
-  lightgbm/xgboost/lifelines/econml/doubleml. The flexible learner is
+- **sklearn-only stack (platform-agnostic).** The flexible learner is
   `HistGradientBoostingClassifier` (native NaN handling + `sample_weight`); isotonic
-  via `IsotonicRegression`; everything else hand-rolled. If a method needs the missing
-  libs, it's `[FUTURE]`, not a `pip install`.
-- **Windows console is cp1252.** Always run `PYTHONUTF8=1 python ...` and keep
-  `print()` ASCII-only — unicode like `π`, `≈`, `≤`, `∩` crashes with
-  `UnicodeEncodeError`. Unicode in `.md` files is fine; in stdout it is not.
+  via `IsotonicRegression`; everything else hand-rolled. The code imports *only*
+  sklearn, so it runs identically on the web/Linux runtime and on the local box. **Do
+  not add** lightgbm/xgboost/lifelines/econml/doubleml — they're `[FUTURE]`, not a
+  `pip install`. (Original reason: the local machine is Python 3.14, which has no
+  wheels for those; keeping the import surface to sklearn means behavior is the same
+  everywhere, including on the web.)
 - **Keep model features numeric (no `category` dtype).** Integer-coded categoricals
-  are treated as numeric/ordinal. This is a deliberate robustness call: pandas
-  `category` dtype causes cross-split category-alignment bugs between
-  train / decision-frame / counterfactual frames. `build_features` returns all-float64
-  with a stable, sorted column order; `align_columns` reindexes other frames to match.
+  are treated as numeric/ordinal. Deliberate robustness call: pandas `category` dtype
+  causes cross-split category-alignment bugs between train / decision-frame /
+  counterfactual frames. `build_features` returns all-float64 with a stable, sorted
+  column order; `align_columns` reindexes other frames to match.
+- **[Windows-local only]** the local console is cp1252, so locally I run
+  `PYTHONUTF8=1 python ...` and keep `print()` ASCII-only (unicode like `π`/`≈`/`≤`
+  raises `UnicodeEncodeError`). **On the web/Linux this does not apply** — UTF-8 is
+  default, use plain `python`. (Unicode in `.md` files is always fine; this was only
+  ever about Windows *stdout*.)
 
 ## 4. The hazard spine — design tricks worth knowing
 
@@ -132,9 +143,11 @@ while building it. Every empirical number here was recomputed from the data
   `unzip dataset/dataset-compressed.zip -d dataset/` (the zip *is* committed). Don't
   commit the CSVs.
 - **`submission/*.csv` ARE committed** (versioned deliverables).
-- This repo's git policy differs from the sibling repos: here Claude commits & pushes
-  to the private `origin` at checkpoints (Hossain often lacks local access). After
-  pushing, confirm `0 ahead / 0 behind`.
+- **Git policy here is the OPPOSITE of the sibling repos.** The other repos say
+  "output the commit command, don't run it." Here, because work is driven from the web
+  (no local fallback), Claude **commits and pushes to the private `origin` itself** at
+  every checkpoint, then confirms `0 ahead / 0 behind`. Unpushed commits at end of
+  session = lost work. Don't carry over the sibling repos' hands-off git rule.
 
 ## 9. Multi-agent / workflow learnings
 
