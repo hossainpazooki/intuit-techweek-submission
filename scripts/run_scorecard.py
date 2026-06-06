@@ -159,6 +159,10 @@ def traj_proxy(models, holdout, labeled, budget) -> dict:
         cif_stack.append(survival.cif_default(h_d, h_p))
     cif = np.mean(cif_stack, axis=0)  # (N, WEEKS)
 
+    # WS2: single-parameter out-of-time CIF recalibration (same as build_submission_b).
+    cif_scale = survival.fit_cif_scale(models, holdout, flag)
+    cif = np.clip(cif * cif_scale, 0.0, 1.0)
+
     weeks = config.WEEKS
     abs_err_w = 0.0
     n_w = 0.0
@@ -190,6 +194,7 @@ def traj_proxy(models, holdout, labeled, budget) -> dict:
     return {
         "weighted_mae": float(model_mae),
         "naive_weighted_mae": float(naive_mae),
+        "cif_scale": float(cif_scale),
         "norm_err": norm,
         "score": float(1.0 - norm),
         "n_cohorts": int(len(np.unique(cohort[np.isfinite(cohort)]))),

@@ -209,11 +209,37 @@ def fit_hazard_ensemble(
 # --------------------------------------------------------------------------- #
 
 
+def fit_cif_scale(
+    models: list[HazardModel],
+    calib_frame: pd.DataFrame,
+    y_calib: np.ndarray,
+    lo: float = 0.8,
+    hi: float = 1.5,
+) -> float:
+    """Global CIF recalibration factor = realized lifetime rate / mean predicted
+    lifetime PD, fit on an out-of-time funded set with outcomes. Clipped to
+    [lo, hi] to stay robust. Corrects the hazard's systematic OOT under-prediction.
+    """
+    from . import features as _features
+
+    y = np.asarray(y_calib, dtype=float)
+    X = _features.build_features(calib_frame)
+    preds = []
+    for m in models:
+        sc = [c for c in m.feature_cols if c != "loan_age_weeks"]
+        preds.append(np.asarray(lifetime_pd(m, _features.align_columns(X, sc)), dtype=float))
+    pred_mean = float(np.mean(preds))
+    if pred_mean <= 1e-9:
+        return 1.0
+    return float(np.clip(np.mean(y) / pred_mean, lo, hi))
+
+
 def predict_trajectory(
     models: list[HazardModel],
     decision_frame: pd.DataFrame,
     decisions: np.ndarray,
     cohort_weeks: np.ndarray,
+    cif_scale: float = 1.0,
 ) -> pd.DataFrame:
     """Produce the 169-row B grid (cohort_week x loan_age_weeks).
 
@@ -247,6 +273,11 @@ def predict_trajectory(
     for m, model in enumerate(models):
         h_d, h_p = hazard_curves(model, X_full)
         cif = cif_default(h_d, h_p)  # (N, weeks)
+        # WS2: out-of-time recalibration -- the hazard systematically under-predicts
+        # on the OOT cohort (lifetime ratio ~1.12); a global scale fit on the
+        # validation funded subset corrects it. Clipped to [0,1].
+        if cif_scale != 1.0:
+            cif = np.clip(cif * cif_scale, 0.0, 1.0)
 
         if approved_mask.any():
             overall = np.nanmean(cif[approved_mask], axis=0)

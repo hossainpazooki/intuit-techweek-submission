@@ -160,7 +160,16 @@ def build_submission_b(
     dec_map = dict(zip(sub_a["applicant_id"].astype(str), sub_a["decision"].astype(int)))
     decisions = df["applicant_id"].astype(str).map(dec_map).fillna(0).astype(int).to_numpy()
 
-    traj = survival.predict_trajectory(models, df, decisions, cohort_weeks)
+    # WS2: out-of-time CIF recalibration scale, fit on the validation funded subset.
+    val = ds.validation
+    val_funded = val[val["default_flag"].notna()].reset_index(drop=True)
+    cif_scale = 1.0
+    if len(val_funded) >= 50:
+        cif_scale = survival.fit_cif_scale(
+            models, val_funded, val_funded["default_flag"].to_numpy(float)
+        )
+
+    traj = survival.predict_trajectory(models, df, decisions, cohort_weeks, cif_scale=cif_scale)
 
     # Anchor on the template grid to guarantee the exact 13x13 row set/order.
     template = pd.read_csv(config.SUBMISSION_B_TEMPLATE_CSV)
