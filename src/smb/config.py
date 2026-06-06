@@ -81,3 +81,12 @@ INTERVAL_UPPER_Q = 0.95
 WEEKS = 13              # discrete weekly periods in the competing-risks hazard
 RECOVERY_PRIOR = 0.09   # default recovery rate prior for NPV economics
 N_BAG_SEEDS = 5         # number of bagged hazard-model seeds in the ensemble
+
+# Deliverable A decision rule (see policy.portfolio_decisions):
+#   "flat"   -- break-even baseline (expected_npv at upper PD bound)   [BASELINE]
+#   "timing" -- WS1 timing-integrated E[NPV] over default-week timing  [VALIDATED]
+# Step 0 captures the "flat" baseline; WS1 flips this to "timing".
+POLICY_RULE = "flat"
+# Decision basis: False -> approve iff point E[NPV] > 0 (P&L-optimal primary rule);
+# True -> conservative variant, decide at the lower E[NPV] credible bound.
+POLICY_CONSERVATIVE = True

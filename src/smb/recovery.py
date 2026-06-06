@@ -70,3 +70,39 @@ def estimate_recovery_rate(labeled_train: pd.DataFrame) -> float:
         return fallback
 
     return float(np.clip(rate, 0.0, _RECOVERY_MAX))
+
+
+def estimate_recovery_rates_by_timing(
+    labeled_train: pd.DataFrame,
+) -> tuple[float, float]:
+    """Mean recovered fraction split by default timing: (in-term, day-90 spike).
+
+    In-term defaulters (days_to_default <= 60) amortize and recover materially;
+    day-90-window defaulters (> 60) recover ~0 empirically. The timing-integrated
+    E[NPV] (economics.expected_npv_timing) prices these two regimes separately,
+    so we return both rates. Each is clamped to [0, 0.62]; missing data falls
+    back to the overall scalar / prior.
+    """
+    overall = estimate_recovery_rate(labeled_train)
+    required = {"default_flag", "final_recovered_amount", "requested_amount", "days_to_default"}
+    if labeled_train is None or not required.issubset(labeled_train.columns):
+        return overall, 0.0
+
+    flag = pd.to_numeric(labeled_train["default_flag"], errors="coerce")
+    recovered = pd.to_numeric(labeled_train["final_recovered_amount"], errors="coerce")
+    principal = pd.to_numeric(labeled_train["requested_amount"], errors="coerce")
+    days = pd.to_numeric(labeled_train["days_to_default"], errors="coerce")
+
+    base = (flag == 1) & recovered.notna() & principal.notna() & (principal > 0)
+    ratio = (recovered / principal)
+
+    def _mean(mask: pd.Series, fallback: float) -> float:
+        vals = ratio[mask].to_numpy(dtype=float)
+        vals = vals[np.isfinite(vals)]
+        if vals.size == 0:
+            return fallback
+        return float(np.clip(np.mean(vals), 0.0, _RECOVERY_MAX))
+
+    interm = _mean(base & (days <= config.TERM_DAYS), overall)
+    spike = _mean(base & (days > config.TERM_DAYS), 0.0)
+    return interm, spike

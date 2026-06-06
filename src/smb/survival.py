@@ -158,6 +158,39 @@ def lifetime_pd(model: HazardModel, X_static: pd.DataFrame) -> np.ndarray:
     return cif[:, -1]
 
 
+def default_week_probs(
+    model: HazardModel, X_static: pd.DataFrame
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-week default probability mass + total payoff probability.
+
+    Decomposes the competing-risks recursion into the marginal probability that
+    the loan *defaults in weekly age t* (not just the cumulative CIF):
+
+        P(default in week t) = h_d[t] * S[t-1]
+        P(payoff)            = sum_t h_p[t] * S[t-1]
+
+    where S[t-1] = prod_{s<t}(1 - h_d[s] - h_p[s]). This is exactly what
+    economics.expected_npv_timing integrates over to price default timing.
+
+    Returns:
+        (p_def, p_payoff) with p_def shape (N, WEEKS) and p_payoff shape (N,).
+        p_def.sum(axis=1) equals lifetime_pd (CIF_d at the final week).
+    """
+    h_d, h_p = hazard_curves(model, X_static)
+    n, weeks = h_d.shape
+    surv_step = np.clip(1.0 - h_d - h_p, 0.0, 1.0)
+
+    p_def = np.zeros((n, weeks), dtype=float)
+    p_payoff = np.zeros(n, dtype=float)
+    s_prev = np.ones(n, dtype=float)  # S[t-1], starting at S[0]=1
+    for t in range(weeks):
+        p_def[:, t] = h_d[:, t] * s_prev
+        p_payoff += h_p[:, t] * s_prev
+        s_prev = s_prev * surv_step[:, t]
+
+    return p_def, p_payoff
+
+
 # --------------------------------------------------------------------------- #
 # Ensemble
 # --------------------------------------------------------------------------- #
