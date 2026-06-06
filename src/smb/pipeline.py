@@ -59,28 +59,48 @@ def _ensemble_lifetime_pd(models, X_static: pd.DataFrame) -> np.ndarray:
 def build_submission_a(
     ds: data.Dataset,
     models,
-    recovery_rate: float,
+    rec_interm: float,
+    rec_spike: float,
 ) -> pd.DataFrame:
     """columns: applicant_id, decision, predicted_pd, pd_lower_90, pd_upper_90.
 
-    Scores the decision frame with the hazard ensemble (lifetime PD per model ->
-    ensemble point + 5/95 bounds), applies the conservative upper-bound NPV
-    decision rule, then LEFT-JOINs onto the expected applicant_id order. Any
-    missing applicant gets the population-mean PD + decision 0.
+    Scores the decision frame with the hazard ensemble via
+    policy.portfolio_decisions (WS1 timing-integrated E[NPV] rule by default,
+    controlled by config.POLICY_RULE / POLICY_CONSERVATIVE), then LEFT-JOINs onto
+    the expected applicant_id order. Any missing applicant gets the
+    population-mean PD + decision 0.
     """
     df = ds.decision_frame.reset_index(drop=True)
 
     X = features.build_features(df)
-    samples = _ensemble_lifetime_pd(models, X)  # (n_models, n)
-    lower, point, upper = calibration.ensemble_intervals(
-        samples, lo=config.INTERVAL_LOWER_Q, hi=config.INTERVAL_UPPER_Q
-    )
-
     amount = pd.to_numeric(df["requested_amount"], errors="coerce").to_numpy(dtype=float)
-    # Decide on the conservative UPPER PD bound.
-    decision = policy.decide(upper, amount, recovery_rate)
-    # A loan with an unusable amount cannot be priced -> decline.
-    decision = np.where(np.isfinite(amount), decision, 0).astype(int)
+
+    res = policy.portfolio_decisions(
+        models, X, amount, rec_interm, rec_spike,
+        rule=config.POLICY_RULE, conservative=config.POLICY_CONSERVATIVE,
+    )
+    decision = res["decision"].astype(int)
+    point = res["predicted_pd"]
+    lower = res["pd_lower_90"]
+    upper = res["pd_upper_90"]
+
+    # WS3: split-conformal recalibration of the reported PD + 90% band, fit on the
+    # validation funded subset (the natural out-of-time set with outcomes). The
+    # decision above is unchanged; only the reported PD columns are recalibrated.
+    val = ds.validation
+    val_funded = val[val["default_flag"].notna()].reset_index(drop=True)
+    if len(val_funded) >= 50:
+        Xv = features.build_features(val_funded)
+        resv = policy.portfolio_decisions(
+            models, Xv,
+            pd.to_numeric(val_funded["requested_amount"], errors="coerce").to_numpy(float),
+            rec_interm, rec_spike,
+            rule=config.POLICY_RULE, conservative=config.POLICY_CONSERVATIVE,
+        )
+        hw = calibration.fit_pd_band(
+            resv["predicted_pd"], val_funded["default_flag"].to_numpy(float)
+        )
+        lower, point, upper = calibration.apply_pd_band(hw, point)
 
     scored = pd.DataFrame(
         {
@@ -230,9 +250,11 @@ def build_submission_c(
 # --------------------------------------------------------------------------- #
 
 
-def main() -> None:
+def main(compute_level: str = "high") -> None:
+    from . import compute as compute_mod
     from . import recovery
 
+    budget = compute_mod.budget(compute_level)
     config.SUBMISSION_DIR.mkdir(exist_ok=True)
 
     print("[1/6] Loading data...")
@@ -249,16 +271,17 @@ def main() -> None:
 
     survival_data.assert_no_censoring(labeled)
 
-    seeds = [config.RANDOM_SEED + i for i in range(config.N_BAG_SEEDS)]
-    print(f"[3/6] Fitting hazard ensemble ({len(seeds)} seeds)...")
+    seeds = [config.RANDOM_SEED + i for i in range(budget["bag_size"])]
+    print(f"[3/6] Fitting hazard ensemble (compute={compute_level}, {len(seeds)} seeds)...")
     models = survival.fit_hazard_ensemble(labeled, seeds)
 
-    print("[4/6] Estimating recovery rate...")
-    recovery_rate = recovery.estimate_recovery_rate(labeled)
-    print(f"      recovery_rate={recovery_rate:.4f}")
+    print("[4/6] Estimating recovery rates by timing...")
+    rec_interm, rec_spike = recovery.estimate_recovery_rates_by_timing(labeled)
+    print(f"      recovery in-term={rec_interm:.4f}  day-90 spike={rec_spike:.4f}")
 
-    print("[5/6] Building submissions A/B/C...")
-    sub_a = build_submission_a(ds, models, recovery_rate)
+    print(f"[5/6] Building submissions A/B/C (policy={config.POLICY_RULE}, "
+          f"conservative={config.POLICY_CONSERVATIVE})...")
+    sub_a = build_submission_a(ds, models, rec_interm, rec_spike)
     sub_a.to_csv(config.FILE_A, index=False)
 
     sub_b = build_submission_b(ds, models, sub_a)

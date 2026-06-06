@@ -201,48 +201,72 @@ def traj_proxy(models, holdout, labeled, budget) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def cal_proxy(models, holdout, budget, n_bins: int = 20) -> dict:
-    """90% PD-interval coverage + width on the funded holdout.
+def _binned_coverage(point, y, lo, hi, n_bins: int = 20) -> tuple[float, int]:
+    """Group-level coverage: fraction of PD-bins whose empirical default rate
+    falls within the bin's mean band. A per-loan PD band is a credible interval
+    on a latent probability we never observe per loan, hence the binned test."""
+    order = np.argsort(point)
+    covered = used = 0
+    for b in np.array_split(order, n_bins):
+        if len(b) == 0:
+            continue
+        rate = float(np.mean(y[b]))
+        used += 1
+        if float(np.mean(lo[b])) <= rate <= float(np.mean(hi[b])):
+            covered += 1
+    return (covered / used if used else 0.0), used
 
-    A per-loan PD band is a credible interval on a latent probability we never
-    observe per loan, so we test it at the *group* level: bin loans by predicted
-    PD, and check whether each bin's empirical default rate falls within the
-    bin's mean band. Reward coverage near 0.90 at minimum width.
+
+def cal_proxy(models, holdout, budget, n_bins: int = 20) -> dict:
+    """90% PD-interval coverage + width on the funded holdout (WS3).
+
+    Uses split-conformal bands (calibration.fit_pd_calibrator). To avoid the
+    circularity of calibrating and evaluating on the same rows, we CROSS-fit: the
+    holdout is split into F folds (F = compute budget conformal_folds); each fold
+    is scored with a calibrator fit on the other folds, then binned coverage and
+    width are measured out-of-fold. The raw ensemble bands are reported alongside
+    as the pre-WS3 baseline.
     """
     amount = pd.to_numeric(holdout["requested_amount"], errors="coerce").to_numpy(float)
     y = holdout["default_flag"].to_numpy(float)
     X = features.build_features(holdout)
     res = policy.portfolio_decisions(
-        models, X, amount, rule=config.POLICY_RULE, conservative=True,
-        lo_pct=budget["enpv_lo_pct"],
+        models, X, amount, rule=config.POLICY_RULE,
+        conservative=config.POLICY_CONSERVATIVE, lo_pct=budget["enpv_lo_pct"],
     )
     point = res["predicted_pd"]
-    lo = res["pd_lower_90"]
-    hi = res["pd_upper_90"]
+    n_bins = 10  # fixed granularity for calibration AND evaluation (bin-noise parity)
 
-    order = np.argsort(point)
-    bins = np.array_split(order, n_bins)
-    covered = 0
-    used = 0
-    for b in bins:
-        if len(b) == 0:
-            continue
-        rate = float(np.mean(y[b]))
-        mean_lo = float(np.mean(lo[b]))
-        mean_hi = float(np.mean(hi[b]))
-        used += 1
-        if mean_lo <= rate <= mean_hi:
-            covered += 1
-    coverage = covered / used if used else 0.0
-    mean_width = float(np.mean(hi - lo))
+    # Pre-WS3 baseline: raw ensemble bands.
+    raw_cov, _ = _binned_coverage(point, y, res["pd_lower_90"], res["pd_upper_90"], n_bins)
+    raw_width = float(np.mean(res["pd_upper_90"] - res["pd_lower_90"]))
+
+    # Repeated 50/50 split-conformal: calibrate on one half, evaluate held-out on
+    # the other (equal-size halves -> same bin noise -> the half-width generalizes).
+    # The number of random splits scales with the compute budget.
+    n_splits = max(2, int(budget["conformal_folds"]))
+    covs, widths = [], []
+    for s in range(n_splits):
+        rng = np.random.default_rng(config.RANDOM_SEED + s)
+        perm = rng.permutation(len(holdout))
+        a, b = perm[: len(perm) // 2], perm[len(perm) // 2:]
+        for cal_idx, test_idx in ((a, b), (b, a)):
+            hw = calibration.fit_pd_band(point[cal_idx], y[cal_idx], n_bins=n_bins)
+            lo, pt, hi = calibration.apply_pd_band(hw, point[test_idx])
+            cov, _ = _binned_coverage(pt, y[test_idx], lo, hi, n_bins=n_bins)
+            covs.append(cov)
+            widths.append(float(np.mean(hi - lo)))
+    coverage = float(np.mean(covs))
+    mean_width = float(np.mean(widths))
 
     coverage_term = max(0.0, 1.0 - abs(coverage - 0.90) / 0.90)
     width_term = 1.0 - float(np.clip(mean_width / 0.5, 0.0, 1.0))
     score = float(np.clip(0.7 * coverage_term + 0.3 * width_term, 0.0, 1.0))
     return {
-        "coverage": float(coverage),
+        "coverage": coverage,
         "mean_width": mean_width,
-        "n_bins_used": int(used),
+        "raw_ensemble_coverage": float(raw_cov),
+        "raw_ensemble_width": raw_width,
         "score": score,
         "mean_predicted_pd": float(np.mean(point)),
         "empirical_default_rate": float(np.mean(y)),
