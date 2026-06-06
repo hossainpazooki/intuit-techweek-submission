@@ -72,7 +72,20 @@ practical consequence is severe and is the spine of our honesty story —
 **positivity fails globally**, so IPW and doubly-robust estimators are **not
 identified** for the declined region; the default behavior of declined applicants
 is only reachable by *extrapolation*, never by reweighting funded look-alikes (there
-are none at the same score).
+are none at the same score). We therefore **fit the outcome model unweighted on the
+funded labeled data only** and have **removed the IPW / reject-inference reweighting
+path** entirely (`propensity.py` is now a pure diagnostic — it *proves* the rule and
+reports positivity, but never reweights the fit).
+
+A direct corollary drives a feature choice: because every funded (labeled) row has
+`prior_underwriter_score >= 0.273` while **43.5% of the decision population sits
+below that minimum** (recomputed from the CSVs), the score is *out of the outcome
+model's training support for nearly half the applicants we must decide on*. Using it
+as an outcome feature would extrapolate a legacy-policy artifact across the funding
+boundary and bake selection into the default model. We therefore **exclude
+`prior_underwriter_score` from the outcome model** (`features.EXCLUDE_COLS`) and keep
+it **only** for the funding-rule / positivity diagnostic
+(`propensity.deterministic_funding_rule`).
 
 **(b) Out-of-time deployment.** Training spans 2024-01 to 2025-06; the decision
 population (validation + test, 13,306 applicants) is a single later 13-week window
@@ -94,7 +107,10 @@ the NPV and Deliverable B require.
 `days_since_*` nulls mean "no prior event." We preserve missingness as signal
 (indicator flags; native NaN handling) rather than blind-imputing. `prior_decision`
 is constant (`== 1`) within the labeled set and is therefore excluded from the
-outcome model (it is informative only for the funding/propensity model).
+outcome model, alongside `prior_approved_amount` (funded-only leakage) and
+`prior_underwriter_score` (the legacy score the funding threshold is defined on; out
+of support for ~44% of the decision set, see §1a). All three are informative only
+for the funding/diagnostic model, not the outcome model.
 
 ---
 
@@ -261,9 +277,24 @@ non-decreasing by definition; as a guardrail the repo already provides
 
 ## 6. Calibration & uncertainty quantification
 
-- **Calibration is primary.** Decisions flip in a narrow band near PD\* ≈ 8%, so we
-  isotonic-recalibrate on a held-out **out-of-time** fold and report reliability
-  curves + ECE. **[BASELINE]**
+- **Calibration is primary, and now applied out-of-time. [BASELINE]** Decisions flip
+  in a narrow band near PD\* ≈ 8.8%, so calibration — not ranking — is the scoreboard.
+  We fit an **isotonic** calibrator on the **validation funded subset** (`n = 2,551`;
+  its realized lifetime default, scored by the train-fit ensemble — a genuinely
+  out-of-time check) and **apply it to the submitted A/B/C PDs** (`config.APPLY_OOT_
+  CALIBRATION`). The map is monotone, so it preserves the `lower ≤ point ≤ upper`
+  ordering and B's per-cohort age-monotonicity, and B is calibrated with the *same*
+  map as A so `cdr@age13 ≈ approved-set PD` stays consistent. We gate the application
+  on a **K-fold cross-fitted** ECE (held-out, not the isotonic's degenerate in-sample
+  ~0): out-of-time ECE improves `0.0228 → 0.0199` and the mean predicted PD rises from
+  `0.187 → 0.206` to match the realized `0.206`. The decision-relevant effect is large
+  precisely because the model under-predicts *near break-even* (raw 0.06 → calibrated
+  ≈ 0.096), which tightens approvals from ~21% (uncalibrated) to **~7%** — the correct
+  conservative consequence of honest calibration. **Caveat (stated, not hidden):** the
+  calibration set is the *funded* slice (positivity fails for the declined region), so
+  applying the map across the whole decision population rests on a **smoothness /
+  extrapolation assumption**, not identification; its effect concentrates in the
+  in-support, near-break-even region where it is most trustworthy.
 - **Intervals.** 90% bands from a bagged/seed ensemble (5th/95th percentiles) for A,
   B, and C. **[BASELINE]** Split-**conformal** coverage guarantees are the principled
   upgrade. **[FUTURE]**
@@ -352,21 +383,35 @@ non-decreasing by definition; as a guardrail the repo already provides
 - The **full baseline modeling pipeline** (`data`, `features`, `survival_data`,
   `survival`, `recovery`, `policy`, `dag`, `causal`, `calibration`, `pipeline`):
   weekly **competing-risks hazard ensemble** (3-class HistGradientBoosting, 5 seeds)
-  → lifetime PD → **upper-bound NPV decision** (A), cohort CIF trajectory (B), and
-  `do()` counterfactuals with structural propagation (C).
+  → lifetime PD → **out-of-time isotonic calibration** (§6) → **upper-bound NPV
+  decision** (A), cohort CIF trajectory (B), and `do()` counterfactuals with
+  structural propagation (C). The outcome model is fit **unweighted on funded labeled
+  data only**, **excludes** `prior_underwriter_score` (§1a/d), and the IPW /
+  reject-inference reweighting path has been **removed**; `propensity.py` now only
+  *proves* the deterministic funding rule and reports positivity.
 - `scripts/run_all.py` fits the ensemble and writes A/B/C; the official
-  `validate_submission.py` returns **`RESULT: PASS`** (0 errors). Sanity: ~19%
-  approval; approved-cohort PD ~5% vs ~30% declined; B monotone with cdr@age13 ~5%;
-  calibration on the validation funded subset (mean predicted 0.185 vs actual 0.206).
+  `validate_submission.py` returns **`RESULT: PASS`** (0 errors). Sanity (current):
+  **~7% approval** (down from ~21% uncalibrated — honest out-of-time calibration
+  reveals the model under-predicts near break-even); approved-set PD ≈ 0.041 (every
+  approval has upper-bound PD < 0.0838 < break-even 0.0879) vs ≈ 0.28 declined; B
+  monotone with cdr@age13 ≈ 0.047 (≈ approved-set PD, cross-check holds); out-of-time
+  calibration on the validation funded subset (mean predicted **0.187 → 0.206** to
+  match actual **0.206**; cross-fit ECE **0.0228 → 0.0199**).
 - Stack is **sklearn-only** (HistGradientBoosting + IsotonicRegression); no
-  lightgbm/lifelines/econml.
+  lightgbm/xgboost/lifelines/econml.
 
 **Proposed / NOT implemented (do not claim as built):**
 
-- IPW *folded into the hazard fit* (we fit unweighted by default — positivity fails,
-  §1a; `propensity.py` exists for diagnostics only), DR-OPE, Double ML, causal
-  forests, split-conformal intervals (we ship ensemble percentile bands), a Markov
-  missed-draw simulation, and DeepHit / Dynamic-DeepHit.
+- The **broader model family** — LightGBM / XGBoost / a logistic stacker and richer
+  diversity-driven bagging — is a **[FUTURE]** extension, *not* a pip-install here:
+  the shipped stack is deliberately sklearn-only so behaviour is identical on every
+  Python ≥ 3.11 runtime (the original box is Python 3.14, which lacks wheels for
+  them). The hazard spine is model-agnostic, so swapping in those learners is a clean
+  upgrade path.
+- IPW / reject-inference reweighting (now **removed**, not merely unused — positivity
+  fails, §1a), DR-OPE, Double ML, causal forests, **split-conformal** intervals (we
+  ship ensemble percentile bands), a Markov missed-draw simulation, and DeepHit /
+  Dynamic-DeepHit.
 
 **The submission must keep this implemented-vs-proposed boundary visible.** Use "we
 validate," "we use as our baseline" (for the above), "we propose," and "future
@@ -384,6 +429,9 @@ extension" (for the list just above) — never claim the research stack is built
 4. Distill §1–§8 into the 4-page Deliverable D writeup
    (`submission_D_writeup_template.md` → PDF), leading §3 (causal) with the
    identification story.
-5. Quality upgrades (optional): apply isotonic recalibration to the *submitted* PDs
-   (the held-out check shows mild under-prediction); add the stretch/aspirational
-   tiers in §2.2–§2.3 as time allows.
+5. **[done]** Out-of-time isotonic recalibration is now **applied to the submitted
+   A/B/C PDs** (§6), gated on a cross-fitted ECE improvement; the legacy
+   `prior_underwriter_score` is excluded from the outcome model and the IPW path
+   removed.
+6. Add the stretch/aspirational tiers in §2.2–§2.3 (and the [FUTURE] model family —
+   LightGBM/XGBoost/logistic stacking) as time allows.

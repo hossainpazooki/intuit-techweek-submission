@@ -50,6 +50,15 @@ EXCLUDE_COLS = [
     # selection leakage / prior-decision consequences
     "prior_decision",
     "prior_approved_amount",
+    # The legacy funding rule is a DETERMINISTIC threshold on
+    # prior_underwriter_score (funded iff score >= ~0.273), so the labeled
+    # (funded) set only ever sees score >= 0.273 while ~44% of the decision
+    # population sits BELOW that minimum -- entirely outside training support.
+    # Using the score as an outcome feature would (a) extrapolate a legacy-policy
+    # artifact for nearly half the decisions and (b) bake the selection signal
+    # into the default model. We therefore EXCLUDE it from the outcome model and
+    # keep it only for the funding-rule / positivity diagnostic (propensity.py).
+    "prior_underwriter_score",
     # identifiers and timestamp
     "business_id",
     "applicant_id",

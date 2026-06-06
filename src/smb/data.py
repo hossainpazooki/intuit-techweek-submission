@@ -41,13 +41,19 @@ OUTCOME_COLUMNS = [
     "observation_status",
 ]
 
-# Columns that are populated as a *consequence* of the prior decision — using
-# them as plain features leaks the very selection we're trying to correct for.
-# Handle with care (see features.py / causal.py).
+# Columns excluded from the outcome model because they encode the prior funding
+# decision rather than the borrower (see features.EXCLUDE_COLS, which is the
+# authoritative drop list):
+#   - prior_decision        constant (==1) within the labeled set; pure selection.
+#   - prior_approved_amount  populated only for funded loans; selection leakage.
+#   - prior_underwriter_score the legacy score the funding THRESHOLD is defined on.
+#     It is excluded from the outcome model (funded rows only ever have score
+#     >= ~0.273, so ~44% of the decision population is out of training support) and
+#     kept only for the funding-rule / positivity diagnostic in propensity.py.
 PRIOR_DECISION_LEAKAGE_COLUMNS = [
     "prior_decision",
     "prior_approved_amount",
-    # prior_underwriter_score is borderline: predictive but a selection proxy.
+    "prior_underwriter_score",
 ]
 
 

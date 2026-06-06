@@ -81,3 +81,17 @@ INTERVAL_UPPER_Q = 0.95
 WEEKS = 13              # discrete weekly periods in the competing-risks hazard
 RECOVERY_PRIOR = 0.09   # default recovery rate prior for NPV economics
 N_BAG_SEEDS = 5         # number of bagged hazard-model seeds in the ensemble
+
+# --------------------------------------------------------------------------- #
+# Out-of-time calibration
+# --------------------------------------------------------------------------- #
+
+# Fit an isotonic PD calibrator on the validation FUNDED subset (its realized
+# lifetime default) and apply it to the submitted PDs (A/B/C). validation/test are
+# LATER cohorts than train, so this corrects out-of-time drift in the PD level
+# (the funded book defaults more in the deployment window than in train). It is
+# applied only if it does not worsen out-of-time ECE. Honesty caveat: the
+# calibration set is itself the *funded* slice (positivity fails for the declined
+# region), so applying it across the whole decision population rests on a stated
+# smoothness/extrapolation assumption, not identification.
+APPLY_OOT_CALIBRATION = True

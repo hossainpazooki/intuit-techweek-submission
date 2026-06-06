@@ -181,13 +181,17 @@ def predict_trajectory(
     decision_frame: pd.DataFrame,
     decisions: np.ndarray,
     cohort_weeks: np.ndarray,
+    oot_iso=None,
 ) -> pd.DataFrame:
     """Produce the 169-row B grid (cohort_week x loan_age_weeks).
 
     For each ensemble member we compute CIF_d for approved applicants
     (decisions == 1), grouped by cohort_week, averaging within each cohort per
     weekly age. Across members we take the mean (point) and 5/95 percentiles
-    (bounds), enforce monotonicity in age per cohort, then clip_and_order.
+    (bounds), optionally apply the out-of-time isotonic calibrator ``oot_iso``
+    (the same monotone map A uses, so cdr@age13 stays consistent with A's
+    approved-set PD; monotonicity in age is preserved because isotonic is
+    non-decreasing), enforce monotonicity in age per cohort, then clip_and_order.
 
     Empty cohorts fall back to the overall approved-mean curve (never NaN).
 
@@ -242,6 +246,12 @@ def predict_trajectory(
         point = np.mean(samples, axis=0)
         lower = np.percentile(samples, lo_q, axis=0)
         upper = np.percentile(samples, hi_q, axis=0)
+
+        # Out-of-time calibration (monotone) on the cumulative-incidence curve.
+        if oot_iso is not None:
+            point = calibration.apply_isotonic(oot_iso, point)
+            lower = calibration.apply_isotonic(oot_iso, lower)
+            upper = calibration.apply_isotonic(oot_iso, upper)
 
         # Monotone (non-decreasing in age) per cohort, on all three series.
         point = enforce_monotone(point)
