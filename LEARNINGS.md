@@ -43,12 +43,19 @@ while building it. Every empirical number here was recomputed from the data
   `prior_underwriter_score >= ~0.273`, with **zero** mismatches and *no overlap*
   (max declined 0.27297 < min approved 0.27301). Consequence: funding propensity is
   degenerate → **positivity fails globally** → IPW / doubly-robust are *not
-  identified*. `src/smb/propensity.py` exists for diagnostics only; the hazard model
-  is fit **unweighted**. Do not "add IPW to improve it" — it's mathematically unsound
-  here.
-- **`prior_decision` is constant (`==1`) in the labeled set** → it's excluded from
-  features (no variance, pure selection signal). `prior_approved_amount` is also
-  excluded (selection leakage).
+  identified*. The IPW / reject-inference **reweighting path has been removed**;
+  `src/smb/propensity.py` is now a **pure diagnostic** (`deterministic_funding_rule`
+  *proves* the threshold; `out_of_support_fraction` + `positivity_report` quantify
+  the overlap failure) and never touches the fit. The hazard model is fit
+  **unweighted**. Do not "add IPW to improve it" — it's mathematically unsound here.
+- **Exclude the `prior_*` selection columns from the outcome model.** `prior_decision`
+  is constant (`==1`) in the labeled set (no variance, pure selection); 
+  `prior_approved_amount` is funded-only leakage; and crucially
+  `prior_underwriter_score` is the score the funding THRESHOLD is defined on — the
+  labeled set only ever has `score >= 0.273`, yet **~44% of the decision population is
+  below that minimum** (out of training support). All three live in
+  `features.EXCLUDE_COLS`; the score is kept only for the funding-rule diagnostic. If
+  you ever see `prior_underwriter_score` back in the model matrix, that's the bug.
 - **Timing has a point mass, not a smooth tail.** Paid loans repay at *exactly* day
   60; defaults span days 3–60 and then jump to a spike at *exactly day 90* (22.5% of
   defaults), with **zero** in the open interval (60, 90). Interest accrues over 60
@@ -119,10 +126,19 @@ while building it. Every empirical number here was recomputed from the data
 
 ## 6. Calibration & uncertainty
 
-- **The model mildly under-predicts** (mean predicted 0.185 vs actual 0.206 on the
-  validation funded subset) because it's trained on the selected/funded slice. The
-  upper-bound decision rule partly compensates. Isotonic recalibration of the
-  *submitted* PDs is implemented but not yet applied to the final output (open TODO).
+- **The model under-predicts out-of-time, and we now correct it.** On the validation
+  funded subset the train-fit ensemble predicts mean 0.187 vs realized 0.206 (the
+  later cohorts default more — temporal drift on top of selection). We fit an
+  **isotonic OOT calibrator** on that subset and **apply it to the submitted A/B/C
+  PDs** (`config.APPLY_OOT_CALIBRATION`, in `pipeline.fit_oot_calibrator`). Two traps
+  to know: (1) **never report isotonic's in-sample ECE** — it's ~0 by construction;
+  gate on a **K-fold cross-fitted** held-out ECE instead (here 0.0228 → 0.0199). (2)
+  The correction is small in ECE but **large in decisions**: because the model
+  under-predicts *near break-even* (raw 0.06 → calibrated ≈ 0.096, vs PD\* ≈ 0.088),
+  approvals tighten from ~21% to **~7%**. That's the honest consequence, not a bug —
+  but it means the calibration is decision-critical, so apply the **same** monotone
+  map to A and B (so `cdr@age13 ≈ approved-set PD` stays consistent) and remember the
+  calibration set is itself the *funded* slice (a stated extrapolation caveat).
 - **Intervals are ensemble percentile bands** (5/95 across `N_BAG_SEEDS=5` seeds), not
   conformal. Split-conformal is `[FUTURE]`. `calibration.clip_and_order` is the final
   safety net that enforces `lower ≤ point ≤ upper` and `[0,1]` before writing.

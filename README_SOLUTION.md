@@ -12,10 +12,12 @@ brief and dataset are upstream Intuit material (see `README.md`,
 
 **Honest status in one line:** the **baseline** tier (METHODOLOGY.md §2.1) is now
 implemented end-to-end — `python scripts/run_all.py` fits the competing-risks hazard
-ensemble and produces A/B/C that **pass the official validator** (`RESULT: PASS`).
-The repo also remains an observability/validation layer (`scripts/eda.py`). The
-**stretch/aspirational** tiers (IPW into the fit, DR-OPE, DML, conformal, DeepHit)
-are still proposed, not built.
+ensemble (fit **unweighted**, no IPW; `prior_underwriter_score` excluded), applies
+**out-of-time isotonic calibration**, and produces A/B/C that **pass the official
+validator** (`RESULT: PASS`). The repo also remains an observability/validation layer
+(`scripts/eda.py`). The **stretch/aspirational** tiers (a broader LightGBM/XGBoost
+model family, DR-OPE, DML, conformal, DeepHit) are proposed, not built; IPW
+reweighting is **removed** outright (positivity fails, so it is not identified).
 
 ## Quick start
 
@@ -77,10 +79,10 @@ src/smb/
   survival_data.py weekly person-period builder (competing-risks layout)
   survival.py      competing-risks hazard ensemble; CIF; B trajectory
   recovery.py      empirical recovery-rate estimate
-  propensity.py    funding-propensity / positivity diagnostics (not used in fit)
-  model_pd.py      thin PD adapters over the hazard spine
+  propensity.py    funding-rule + positivity DIAGNOSTICS only (IPW removed)
+  model_pd.py      standalone binary HistGB+isotonic PD baseline (unweighted)
   policy.py        NPV approve/decline rule at the UPPER PD bound (A)
-  calibration.py   clip/order, isotonic, ensemble + conformal intervals
+  calibration.py   clip/order, isotonic (OOT), ensemble + conformal intervals
   dag.py           intervention DAG + structural propagation (C)
   causal.py        counterfactual PD via do() off the hazard ensemble (C)
   pipeline.py      orchestrates -> submission/*.csv + in-process validate
@@ -97,9 +99,13 @@ Baseline implemented end-to-end and passing; stretch/aspirational tiers proposed
 
 - [x] **Premises validated** — `scripts/eda.py` (selective labels, deterministic
       funding rule, timing, missingness, overlap, query structure, cohort sizes).
-- [x] **A** — decisions: competing-risks lifetime PD + NPV rule at the **upper**
-      PD bound + ensemble intervals (approve ~19%; approved-cohort PD ~5% vs ~30%
-      declined; calibration checked on the validation funded subset).
+- [x] **A** — decisions: competing-risks lifetime PD (outcome model excludes the
+      legacy `prior_underwriter_score`; fit unweighted, no IPW) → **out-of-time
+      isotonic calibration** on the validation funded subset → NPV rule at the
+      **upper** PD bound + ensemble intervals. Honest OOT calibration corrects the
+      model's under-prediction near break-even, so approvals tighten to **~7%**
+      (approved-set PD ≈ 0.04, all with upper-bound PD < break-even ≈ 0.088, vs
+      ≈ 0.28 declined).
 - [x] **B** — trajectory: cohort × loan-age cumulative default off the hazard
       ensemble over approved loans, monotone by construction.
 - [x] **C** — counterfactuals: do() off the ensemble with structural propagation
