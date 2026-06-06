@@ -110,8 +110,9 @@ Baseline implemented end-to-end and passing; stretch/aspirational tiers proposed
       ensemble over approved loans, monotone by construction.
 - [x] **C** — counterfactuals: do() off the ensemble with structural propagation
       (bank-feed block, engineered ratios); intervals widen vs A.
-- [ ] **D** — writeup (`submission_D_writeup_template.md` → PDF; §3 causal weighted
-      most) — distill from `METHODOLOGY.md`.
+- [x] **D** — writeup: `submission_D_writeup.md` (final draft on the official
+      5-section template; §3 causal weighted most) distilled from `METHODOLOGY.md`,
+      every figure recomputed from the CSVs → export to `submission_D_writeup.pdf`.
 
 ## Remotes
 
