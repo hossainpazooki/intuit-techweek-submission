@@ -18,6 +18,12 @@ artifacts/ground_truth/
 artifacts/runs/
 artifacts/
 
+# Unzipped dataset CSVs (reproducible from dataset-compressed.zip; the zip IS committed)
+dataset/train.csv
+dataset/validation.csv
+dataset/test.csv
+__MACOSX/
+
 # OS
 .DS_Store
 

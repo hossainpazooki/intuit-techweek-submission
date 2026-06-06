@@ -1,0 +1,8 @@
+# Modeling stack for building the submission (the base requirements.txt only
+# covers reading data + running the validator).
+-r requirements.txt
+
+scikit-learn>=1.5      # PD model, calibration (isotonic/Platt), IPW propensity
+lightgbm>=4.3          # gradient-boosted PD / hazard learner (workhorse)
+lifelines>=0.29        # optional: Kaplan-Meier / survival for Deliverable B
+matplotlib>=3.8        # EDA / calibration plots
