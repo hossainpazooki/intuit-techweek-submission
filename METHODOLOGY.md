@@ -5,7 +5,8 @@ honest**: it separates what this repository *actually does today* from what we
 *propose* as the modeling approach, and it states the identification limits of the
 problem rather than papering over them. Every empirical number below was recomputed
 from the released CSVs (see `scripts/eda.py`), and the technical claims were
-adversarially cross-checked before being written here.
+adversarially cross-checked before being written here (see
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md) for the method and findings).
 
 The strongest contribution of this submission is **not** a heavyweight model — it
 is a disciplined account of *what is identifiable, what is only partially
