@@ -73,3 +73,11 @@ RANDOM_SEED = 42
 INTERVAL_ALPHA = 0.10
 INTERVAL_LOWER_Q = 0.05
 INTERVAL_UPPER_Q = 0.95
+
+# --------------------------------------------------------------------------- #
+# Hazard spine + recovery + ensemble bagging
+# --------------------------------------------------------------------------- #
+
+WEEKS = 13              # discrete weekly periods in the competing-risks hazard
+RECOVERY_PRIOR = 0.09   # default recovery rate prior for NPV economics
+N_BAG_SEEDS = 5         # number of bagged hazard-model seeds in the ensemble

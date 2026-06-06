@@ -10,10 +10,12 @@ brief and dataset are upstream Intuit material (see `README.md`,
 > the identification limits of the problem. Read it for the full technical argument;
 > this file is the short orientation + run instructions.
 
-**Honest status in one line:** this repo is today an *observability / validation
-layer plus a validated scaffold* — it verifies the empirical premises and gates
-submissions against the official validator. The modeling pipeline is designed and
-documented but **not yet implemented** (the modeling modules are stubs).
+**Honest status in one line:** the **baseline** tier (METHODOLOGY.md §2.1) is now
+implemented end-to-end — `python scripts/run_all.py` fits the competing-risks hazard
+ensemble and produces A/B/C that **pass the official validator** (`RESULT: PASS`).
+The repo also remains an observability/validation layer (`scripts/eda.py`). The
+**stretch/aspirational** tiers (IPW into the fit, DR-OPE, DML, conformal, DeepHit)
+are still proposed, not built.
 
 ## Quick start
 
@@ -64,38 +66,46 @@ convention) vs the 17.45% funded-book default rate. See `METHODOLOGY.md` §3.
 
 ## Layout
 
-Implemented = runs today; *stub* = designed/documented but raises
-`NotImplementedError` (see `METHODOLOGY.md` §10).
+All modules below are implemented (baseline tier). `survival_data`, `propensity`,
+`recovery`, `dag` are new modules added during implementation.
 
 ```
 src/smb/
-  config.py       loan economics + cohort constants            [implemented]
-  calibration.py  clip_and_order, coverage (guardrails)        [partial: helpers only]
-  survival.py     enforce_monotone (cummax guardrail)          [partial: helper only]
-  data.py         load/clean, label construction               [stub]
-  features.py     feature engineering + intervenable metadata   [stub]
-  model_pd.py     calibrated PD model (A) + selection weights   [stub]
-  policy.py       NPV approve/decline rule (A)                  [stub]
-  causal.py       counterfactuals (C)                           [stub]
-  pipeline.py     orchestrates -> submission/*.csv              [stub]
+  config.py        loan economics + cohort/hazard constants
+  data.py          load/clean, cohort assignment, label + missingness
+  features.py      numeric feature matrix + intervenable metadata + propagation
+  survival_data.py weekly person-period builder (competing-risks layout)
+  survival.py      competing-risks hazard ensemble; CIF; B trajectory
+  recovery.py      empirical recovery-rate estimate
+  propensity.py    funding-propensity / positivity diagnostics (not used in fit)
+  model_pd.py      thin PD adapters over the hazard spine
+  policy.py        NPV approve/decline rule at the UPPER PD bound (A)
+  calibration.py   clip/order, isotonic, ensemble + conformal intervals
+  dag.py           intervention DAG + structural propagation (C)
+  causal.py        counterfactual PD via do() off the hazard ensemble (C)
+  pipeline.py      orchestrates -> submission/*.csv + in-process validate
 scripts/
-  eda.py          reproducible exploration / premise validation [implemented]
-  validate.py     wrapper around Intuit's validate_submission.py [implemented]
-  run_all.py      build all deliverables + validate             [implemented wrapper;
-                                                                 blocked by stubs]
-submission/       the four output files (flat, exact names)
+  eda.py           reproducible exploration / premise validation
+  run_all.py       build all deliverables + validate  (=> RESULT: PASS)
+  validate.py      wrapper around Intuit's validate_submission.py
+submission/        the four output files (flat, exact names)
 ```
 
 ## Deliverable status
 
-Methodology validated and corrected (see `METHODOLOGY.md`); modeling not yet built.
+Baseline implemented end-to-end and passing; stretch/aspirational tiers proposed.
 
 - [x] **Premises validated** — `scripts/eda.py` (selective labels, deterministic
       funding rule, timing, missingness, overlap, query structure, cohort sizes).
-- [ ] A — decisions (calibrated PD + NPV rule at the **upper** PD bound + intervals).
-- [ ] B — trajectory (cohort × loan-age cumulative default, monotone by construction).
-- [ ] C — counterfactuals (structural propagation; observational gap surfaced).
-- [ ] D — writeup (`submission_D_writeup_template.md` → PDF; §3 causal weighted most).
+- [x] **A** — decisions: competing-risks lifetime PD + NPV rule at the **upper**
+      PD bound + ensemble intervals (approve ~19%; approved-cohort PD ~5% vs ~30%
+      declined; calibration checked on the validation funded subset).
+- [x] **B** — trajectory: cohort × loan-age cumulative default off the hazard
+      ensemble over approved loans, monotone by construction.
+- [x] **C** — counterfactuals: do() off the ensemble with structural propagation
+      (bank-feed block, engineered ratios); intervals widen vs A.
+- [ ] **D** — writeup (`submission_D_writeup_template.md` → PDF; §3 causal weighted
+      most) — distill from `METHODOLOGY.md`.
 
 ## Remotes
 

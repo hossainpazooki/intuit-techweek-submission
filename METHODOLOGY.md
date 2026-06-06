@@ -38,11 +38,14 @@ scaffold**. Concretely, it **[VALIDATED]**:
 - runs **selection / overlap diagnostics** (positivity);
 - wraps the **official validator** so any produced submission is gated.
 
-It does **not** currently implement survival modeling, IPW, doubly-robust
-off-policy evaluation (DR-OPE), Double ML (DML), causal forests, a Markov
-missed-draw simulation, conformal calibration, or DeepHit. Those appear here as
-**proposed** method tiers, not as completed work. (See §10 for the exact
-implemented-vs-proposed inventory; the modeling modules are documented stubs.)
+On top of that layer, the **baseline tier (§2.1) is now implemented end-to-end**:
+`python scripts/run_all.py` fits the weekly competing-risks hazard ensemble and
+emits A/B/C that **pass the official validator**. What is still *not* implemented —
+and is **not** claimed as done — is the stretch/aspirational machinery: IPW *folded
+into the fit*, doubly-robust off-policy evaluation (DR-OPE), Double ML (DML), causal
+forests, a Markov missed-draw simulation, split-conformal calibration, and DeepHit.
+Those remain **proposed** tiers. (See §10 for the exact implemented-vs-proposed
+inventory.)
 
 ---
 
@@ -339,40 +342,47 @@ non-decreasing by definition; as a guardrail the repo already provides
 
 ## 10. Implementation status (implemented vs proposed)
 
-**Implemented today — runs [VALIDATED]:**
+**Implemented today — runs, validator-passing [VALIDATED] + [BASELINE]:**
 
 - `scripts/eda.py` — exploration/validation pass (split shapes; 13,306 decision set;
   selective-labels gap; deterministic funding-threshold check; default & payoff
   timing; recovery distribution; bank-feed gating; intervention-query structure;
   overlap diagnostics; cohort sizes).
-- `src/smb/config.py` — loan-economics and cohort constants (constants only).
-- Guardrail helpers: `survival.enforce_monotone`, `calibration.clip_and_order`,
-  `calibration.coverage` (pure-numpy).
-- `scripts/validate.py`, `scripts/run_all.py` — wrappers around the official
-  `validate_submission.py` (note: `run_all` cannot complete end-to-end yet because
-  the modeling pipeline is stubbed).
+- The **full baseline modeling pipeline** (`data`, `features`, `survival_data`,
+  `survival`, `recovery`, `policy`, `dag`, `causal`, `calibration`, `pipeline`):
+  weekly **competing-risks hazard ensemble** (3-class HistGradientBoosting, 5 seeds)
+  → lifetime PD → **upper-bound NPV decision** (A), cohort CIF trajectory (B), and
+  `do()` counterfactuals with structural propagation (C).
+- `scripts/run_all.py` fits the ensemble and writes A/B/C; the official
+  `validate_submission.py` returns **`RESULT: PASS`** (0 errors). Sanity: ~19%
+  approval; approved-cohort PD ~5% vs ~30% declined; B monotone with cdr@age13 ~5%;
+  calibration on the validation funded subset (mean predicted 0.185 vs actual 0.206).
+- Stack is **sklearn-only** (HistGradientBoosting + IsotonicRegression); no
+  lightgbm/lifelines/econml.
 
-**Proposed / not yet implemented (documented stubs):**
+**Proposed / NOT implemented (do not claim as built):**
 
-- Data loading & label construction, feature building, the PD model, the NPV policy,
-  IPW / selection correction, the competing-risks hazard, counterfactual estimation,
-  conformal intervals, DR-OPE, and the A/B/C submission builders. The modeling
-  modules currently raise `NotImplementedError`; advanced-method names appear only in
-  docstrings/TODOs. No modeling libraries (sklearn/lightgbm/lifelines/econml/…) are
-  imported yet.
+- IPW *folded into the hazard fit* (we fit unweighted by default — positivity fails,
+  §1a; `propensity.py` exists for diagnostics only), DR-OPE, Double ML, causal
+  forests, split-conformal intervals (we ship ensemble percentile bands), a Markov
+  missed-draw simulation, and DeepHit / Dynamic-DeepHit.
 
 **The submission must keep this implemented-vs-proposed boundary visible.** Use "we
-validate," "we propose," "we use as baseline," and "future extension" — never claim
-the research stack is built.
+validate," "we use as our baseline" (for the above), "we propose," and "future
+extension" (for the list just above) — never claim the research stack is built.
 
 ---
 
 ## 11. Open TODOs
 
-1. Decide and **state** the interest convention (full-principal vs amortizing).
-2. Pick a central recovery figure (≈ 0.09R) and disclose dispersion.
-3. Implement the **[BASELINE]** tier end-to-end so `run_all.py` produces a
-   validator-passing A/B/C (per the approved implementation plan).
+1. **[done]** Interest convention chosen and stated: full-principal (`g = 0.0875`),
+   used in `policy.expected_npv`.
+2. **[done]** Recovery: empirical mean `≈ 0.091R` (`recovery.estimate_recovery_rate`),
+   dispersion disclosed in §3.
+3. **[done]** Baseline tier implemented end-to-end; `run_all.py` → `RESULT: PASS`.
 4. Distill §1–§8 into the 4-page Deliverable D writeup
    (`submission_D_writeup_template.md` → PDF), leading §3 (causal) with the
    identification story.
+5. Quality upgrades (optional): apply isotonic recalibration to the *submitted* PDs
+   (the held-out check shows mild under-prediction); add the stretch/aspirational
+   tiers in §2.2–§2.3 as time allows.

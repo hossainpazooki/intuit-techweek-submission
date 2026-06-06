@@ -1,8 +1,7 @@
 # Modeling stack for building the submission (the base requirements.txt only
-# covers reading data + running the validator).
+# covers reading data + running the validator). The pipeline is sklearn-only by
+# design (Python 3.14 lacks wheels for lightgbm/econml/etc.); see METHODOLOGY.md.
 -r requirements.txt
 
-scikit-learn>=1.5      # PD model, calibration (isotonic/Platt), IPW propensity
-lightgbm>=4.3          # gradient-boosted PD / hazard learner (workhorse)
-lifelines>=0.29        # optional: Kaplan-Meier / survival for Deliverable B
-matplotlib>=3.8        # EDA / calibration plots
+scikit-learn>=1.5      # HistGradientBoosting hazard/PD model + isotonic calibration
+matplotlib>=3.8        # EDA / calibration plots (optional)
