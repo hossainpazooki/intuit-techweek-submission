@@ -158,6 +158,39 @@ def lifetime_pd(model: HazardModel, X_static: pd.DataFrame) -> np.ndarray:
     return cif[:, -1]
 
 
+def default_week_probs(
+    model: HazardModel, X_static: pd.DataFrame
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-week default probability mass + total payoff probability.
+
+    Decomposes the competing-risks recursion into the marginal probability that
+    the loan *defaults in weekly age t* (not just the cumulative CIF):
+
+        P(default in week t) = h_d[t] * S[t-1]
+        P(payoff)            = sum_t h_p[t] * S[t-1]
+
+    where S[t-1] = prod_{s<t}(1 - h_d[s] - h_p[s]). This is exactly what
+    economics.expected_npv_timing integrates over to price default timing.
+
+    Returns:
+        (p_def, p_payoff) with p_def shape (N, WEEKS) and p_payoff shape (N,).
+        p_def.sum(axis=1) equals lifetime_pd (CIF_d at the final week).
+    """
+    h_d, h_p = hazard_curves(model, X_static)
+    n, weeks = h_d.shape
+    surv_step = np.clip(1.0 - h_d - h_p, 0.0, 1.0)
+
+    p_def = np.zeros((n, weeks), dtype=float)
+    p_payoff = np.zeros(n, dtype=float)
+    s_prev = np.ones(n, dtype=float)  # S[t-1], starting at S[0]=1
+    for t in range(weeks):
+        p_def[:, t] = h_d[:, t] * s_prev
+        p_payoff += h_p[:, t] * s_prev
+        s_prev = s_prev * surv_step[:, t]
+
+    return p_def, p_payoff
+
+
 # --------------------------------------------------------------------------- #
 # Ensemble
 # --------------------------------------------------------------------------- #
@@ -176,12 +209,38 @@ def fit_hazard_ensemble(
 # --------------------------------------------------------------------------- #
 
 
+def fit_cif_scale(
+    models: list[HazardModel],
+    calib_frame: pd.DataFrame,
+    y_calib: np.ndarray,
+    lo: float = 0.8,
+    hi: float = 1.5,
+) -> float:
+    """Global CIF recalibration factor = realized lifetime rate / mean predicted
+    lifetime PD, fit on an out-of-time funded set with outcomes. Clipped to
+    [lo, hi] to stay robust. Corrects the hazard's systematic OOT under-prediction.
+    """
+    from . import features as _features
+
+    y = np.asarray(y_calib, dtype=float)
+    X = _features.build_features(calib_frame)
+    preds = []
+    for m in models:
+        sc = [c for c in m.feature_cols if c != "loan_age_weeks"]
+        preds.append(np.asarray(lifetime_pd(m, _features.align_columns(X, sc)), dtype=float))
+    pred_mean = float(np.mean(preds))
+    if pred_mean <= 1e-9:
+        return 1.0
+    return float(np.clip(np.mean(y) / pred_mean, lo, hi))
+
+
 def predict_trajectory(
     models: list[HazardModel],
     decision_frame: pd.DataFrame,
     decisions: np.ndarray,
     cohort_weeks: np.ndarray,
     oot_iso=None,
+    cif_scale: float = 1.0,
 ) -> pd.DataFrame:
     """Produce the 169-row B grid (cohort_week x loan_age_weeks).
 
@@ -218,6 +277,11 @@ def predict_trajectory(
     for m, model in enumerate(models):
         h_d, h_p = hazard_curves(model, X_full)
         cif = cif_default(h_d, h_p)  # (N, weeks)
+        # WS2: out-of-time recalibration -- the hazard systematically under-predicts
+        # on the OOT cohort (lifetime ratio ~1.12); a global scale fit on the
+        # validation funded subset corrects it. Clipped to [0,1].
+        if cif_scale != 1.0:
+            cif = np.clip(cif * cif_scale, 0.0, 1.0)
 
         if approved_mask.any():
             overall = np.nanmean(cif[approved_mask], axis=0)

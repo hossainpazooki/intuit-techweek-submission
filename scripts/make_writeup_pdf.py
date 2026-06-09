@@ -1,4 +1,4 @@
-"""Render submission_D_writeup.md -> submission/submission_D_writeup.pdf.
+"""Render submission/submission_D_writeup.md -> submission/submission_D_writeup.pdf.
 
 Self-contained markdown->PDF for the Deliverable D writeup, honoring the enforced
 format: US Letter, >= 0.75in margins, 11pt body font, the five required headers in
@@ -19,7 +19,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "submission_D_writeup.md"
+SRC = ROOT / "submission" / "submission_D_writeup.md"
 OUT = ROOT / "submission" / "submission_D_writeup.pdf"
 
 # Helvetica (a built-in PDF font) lacks many math/typographic glyphs; map them to

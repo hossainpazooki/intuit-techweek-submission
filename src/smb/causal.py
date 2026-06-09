@@ -124,55 +124,49 @@ def estimate_counterfactual(
     except Exception:
         pop_point, pop_lower, pop_upper = 0.5, 0.0, 1.0
 
-    records: list[dict] = []
-    for _, q in queries.iterrows():
-        query_id = q["query_id"]
-        applicant_id = q["applicant_id"]
-        feature = q["feature_name"]
-        value = q["intervention_value"]
+    # Build every intervened RAW row first (per-row do() + descendant propagation),
+    # then score them in ONE batched ensemble pass. This is numerically identical
+    # to scoring each query separately (the hazard is row-independent) but amortizes
+    # the per-call predict_proba overhead -- ~900x fewer predict calls.
+    qids = queries["query_id"].tolist()
+    applicants = queries["applicant_id"].tolist()
+    feats = queries["feature_name"].tolist()
+    vals = queries["intervention_value"].tolist()
 
-        pos = by_applicant.get(applicant_id)
+    intervened_rows: list = []     # 1-row raw frames, in matched order
+    matched_idx: list[int] = []    # query index for each collected row
+    result: dict = {}              # query_id -> (point, lower, upper)
+
+    for i in range(len(qids)):
+        pos = by_applicant.get(applicants[i])
         if pos is None:
-            # Applicant not in decision frame -> population fallback, wide band.
-            records.append(
-                {
-                    "query_id": query_id,
-                    "predicted_pd_cf": pop_point,
-                    "pd_cf_lower_90": pop_lower,
-                    "pd_cf_upper_90": pop_upper,
-                }
-            )
+            result[qids[i]] = (pop_point, pop_lower, pop_upper)
             continue
-
         try:
-            raw_row = df.iloc[[pos]].copy()
-            intervened = dag.propagate_intervention(raw_row, feature, value)
-            X_cf = features.build_features(intervened)
-            samples = _ensemble_lifetime_pd(models, X_cf)  # (n_models, 1)
-            lower, point, upper = calibration.ensemble_intervals(
-                samples, lo=lo, hi=hi
-            )
-            records.append(
-                {
-                    "query_id": query_id,
-                    "predicted_pd_cf": float(point[0]),
-                    "pd_cf_lower_90": float(lower[0]),
-                    "pd_cf_upper_90": float(upper[0]),
-                }
-            )
+            intervened = dag.propagate_intervention(df.iloc[[pos]].copy(), feats[i], vals[i])
+            intervened_rows.append(intervened)
+            matched_idx.append(i)
         except Exception:
-            # Any per-query failure -> population fallback so C never has gaps.
-            records.append(
-                {
-                    "query_id": query_id,
-                    "predicted_pd_cf": pop_point,
-                    "pd_cf_lower_90": pop_lower,
-                    "pd_cf_upper_90": pop_upper,
-                }
-            )
+            result[qids[i]] = (pop_point, pop_lower, pop_upper)
+
+    if intervened_rows:
+        big = pd.concat(intervened_rows, ignore_index=True)
+        X_cf = features.build_features(big)
+        samples = _ensemble_lifetime_pd(models, X_cf)  # (n_models, n_matched)
+        lower, point, upper = calibration.ensemble_intervals(samples, lo=lo, hi=hi)
+        for j, i in enumerate(matched_idx):
+            result[qids[i]] = (float(point[j]), float(lower[j]), float(upper[j]))
 
     out = pd.DataFrame.from_records(
-        records,
+        [
+            {
+                "query_id": qids[i],
+                "predicted_pd_cf": result[qids[i]][0],
+                "pd_cf_lower_90": result[qids[i]][1],
+                "pd_cf_upper_90": result[qids[i]][2],
+            }
+            for i in range(len(qids))
+        ],
         columns=[
             "query_id",
             "predicted_pd_cf",

@@ -1,0 +1,78 @@
+{
+  "_caveat": "PROXY score; true score uses hidden labels + hidden normalization. Measured on the out-of-time validation funded holdout; weights per brief p.14.",
+  "compute": "high",
+  "budget": {
+    "bag_size": 8,
+    "hp_width": 3,
+    "conformal_folds": 10,
+    "boot_b": 250,
+    "boot_c": 250,
+    "enpv_lo_pct": 5.0,
+    "sev_resolution": 9,
+    "sev_seeds": 8
+  },
+  "policy_rule": "timing",
+  "recovery_interm": 0.11782952093890374,
+  "recovery_spike": 0.00013095693536465967,
+  "weights": {
+    "pnl": 0.3,
+    "traj": 0.25,
+    "cal": 0.2,
+    "c": 0.1,
+    "write": 0.15
+  },
+  "pnl_proxy": {
+    "total_flat_point": 552920.0798372787,
+    "approval_rate_flat_point": 0.3586828694629557,
+    "total_flat_cons": 512660.1910687896,
+    "approval_rate_flat_cons": 0.2657781262250098,
+    "total_timing_point": 603817.2502826285,
+    "approval_rate_timing_point": 0.5938847510780086,
+    "total_timing_cons": 460107.5939148102,
+    "approval_rate_timing_cons": 0.471187769502156,
+    "headline_rule": "timing_point",
+    "our_total": 603817.2502826285,
+    "legacy_total": -2559745.662274491,
+    "approve_all_total": -2559745.662274491,
+    "oracle_total": 4751413.551247706,
+    "n_holdout": 2551,
+    "uplift_vs_legacy": 3163562.9125571195,
+    "uplift_vs_flat_baseline": 91157.05921383889,
+    "approval_rate_headline": 0.5938847510780086,
+    "norm": 0.4327033265403412
+  },
+  "traj_proxy": {
+    "weighted_mae": 0.014966819014031636,
+    "naive_weighted_mae": 0.025913014281059018,
+    "cif_scale": 1.1090575814406138,
+    "norm_err": 0.5775792368922342,
+    "score": 0.4224207631077658,
+    "n_cohorts": 13
+  },
+  "cal_proxy": {
+    "coverage": 0.89,
+    "mean_width": 0.13373166442195966,
+    "raw_ensemble_coverage": 0.8,
+    "raw_ensemble_width": 0.0821224447290937,
+    "score": 0.9119832235690464,
+    "mean_predicted_pd": 0.18591789371419334,
+    "empirical_default_rate": 0.2061936495491964
+  },
+  "c_proxy": {
+    "naive_mae": 0.10847326225340667,
+    "gcomp_mae": 0.08539524352492496,
+    "norm": 0.21275306235898636,
+    "available": true
+  },
+  "writeup_proxy": {
+    "checklist": {
+      "scorecard": true,
+      "pnl_backtest_fig": true,
+      "coverage_curve": false,
+      "compute_curve": true,
+      "writeup_md": true
+    },
+    "frac": 0.8
+  },
+  "weighted_proxy": 0.5590881396887517
+}
