@@ -23,7 +23,7 @@ held-out population of **13,306** applicants:
 |---|---|---|
 | **A** | Decisions | Approve/decline + a calibrated PD and 90% band per applicant |
 | **B** | Trajectory | Cumulative default rate over a 13-week horizon, per weekly cohort |
-| **C** | Counterfactuals | `P(default | do(feature = value))` — *interventional*, not observational |
+| **C** | Counterfactuals | `P(default \| do(feature = value))` — *interventional*, not observational |
 | **D** | Writeup | A 5-section technical defense (causal reasoning weighted most) |
 
 **The catch — selective labels.** Outcomes (`default_flag`, timing, recovery) exist
