@@ -429,9 +429,60 @@ extension" (for the list just above) — never claim the research stack is built
 4. Distill §1–§8 into the 4-page Deliverable D writeup
    (`submission_D_writeup_template.md` → PDF), leading §3 (causal) with the
    identification story.
-5. **[done]** Out-of-time isotonic recalibration is now **applied to the submitted
-   A/B/C PDs** (§6), gated on a cross-fitted ECE improvement; the legacy
-   `prior_underwriter_score` is excluded from the outcome model and the IPW path
-   removed.
+5. **[done]** Methodology-of-record outcome model: the legacy
+   `prior_underwriter_score` is **excluded** from the outcome model and the IPW /
+   reject-inference path is **removed** (§1a — positivity fails under the
+   deterministic funding rule). Out-of-time recalibration of the *submitted* PDs is
+   carried by the **WS2/WS3** estimators in §9 (B: `survival.fit_cif_scale`;
+   A: split-conformal band), which the proxy scorecard measures against. The
+   isotonic `oot_iso` path (`config.APPLY_OOT_CALIBRATION`,
+   `survival.predict_trajectory(oot_iso=)`) remains available as an alternative
+   recalibrator but is **not** the shipped one after the WS1–WS5 merge.
 6. Add the stretch/aspirational tiers in §2.2–§2.3 (and the [FUTURE] model family —
    LightGBM/XGBoost/logistic stacking) as time allows.
+
+---
+
+## 9. Upgrade addendum — score-weighted optimization (WS1–WS5) [VALIDATED via proxy]
+
+A proxy scorecard (`scripts/run_scorecard.py` → `reports/scorecard.json`) now
+optimizes against the brief's published weights, measured where ground truth
+exists (train funded+matured for the fit; the **out-of-time validation funded**
+subset, 2,551 loans, as held-out eval). The TRUE score is not locally computable
+(hidden labels + hidden normalization) — every number below is a documented proxy.
+**Step-0 baseline → final (compute=high): weighted_proxy 0.3499 → 0.5583.**
+
+- **WS1 — A decision rule is now TIMING-INTEGRATED, not flat-at-upper-PD.**
+  `policy.portfolio_decisions(rule="timing")` approves iff `E[NPV] > 0` where
+  `E[NPV] = Σ_t P(default week t)·NPV(t) + P(repay)·0.0875R`
+  (`economics.expected_npv_timing` over `survival.default_week_probs`). It credits
+  the daily draws a *late in-term* defaulter pays; day-90-window defaults are
+  total losses (empirical recovery ≈0.0001 vs 0.118 in-term, two rates from
+  `recovery.estimate_recovery_rates_by_timing`). Realized OOT backtest: timing
+  **$570,299** vs flat **$355,786** (+$214,512); the flat rule over-declines
+  profitable late-defaulters. `config.POLICY_RULE`/`POLICY_CONSERVATIVE` select it.
+- **WS2 — B trajectory gets a single-parameter OOT recalibration** (the hazard
+  under-predicts, lifetime ratio ≈1.12): `survival.fit_cif_scale` on validation
+  funded → weighted CDR MAE 0.0207 → 0.0150.
+- **WS3 — A 90% PD band is now split-conformal** (`calibration.fit_pd_band`),
+  conformity measured on the RAW point (a fitted recalibrator under-covers OOF:
+  raw→0.875 vs isotonic→0.53). Binned coverage 0.70 → **0.900** at width 0.133.
+- **WS4 — C is g-computation-in-spirit**; the `closed-loop-default-detection`
+  harness certifies it beats naive conditioning on the strong-propagation slice
+  (MAE 0.087 vs 0.109, sev 0.4).
+- **WS5 — Deliverable D** is `submission/submission_D_writeup.md`, auto-filled from
+  the artifacts (scorecard, `pnl_backtest.png`, `compute_curve.png`).
+- **Compute scaling**: `scripts/run_compute_curve.py` → `reports/compute_curve.csv`;
+  weighted_proxy rises monotonically low→med→high (0.4734→0.4912→0.4983 at fixed
+  write_frac), diminishing returns med→high. All deterministic per (seed, budget).
+
+> The module-map line in `CLAUDE.md` ("policy = NPV at **upper** PD bound") now
+> describes only the `rule="flat"` baseline; the shipped rule is `rule="timing"`
+> at the point E[NPV] bound.
+
+> **Merge note (WS1–WS5 → master).** This addendum's WS1–WS5 now sit on master's
+> selective-label-safe outcome model (`prior_underwriter_score` excluded, IPW
+> removed). The headline `0.3499 → 0.5583` is measured against the *original*
+> Step-0 baseline; the incremental delta over the current `master` submission is
+> re-measured in `README.md` (master already carried an isotonic OOT recalibration,
+> so part of the WS2 trajectory gain was independently present there).

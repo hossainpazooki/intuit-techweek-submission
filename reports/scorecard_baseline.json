@@ -1,0 +1,76 @@
+{
+  "_caveat": "PROXY score; true score uses hidden labels + hidden normalization. Measured on the out-of-time validation funded holdout; weights per brief p.14.",
+  "compute": "high",
+  "budget": {
+    "bag_size": 8,
+    "hp_width": 3,
+    "conformal_folds": 10,
+    "boot_b": 250,
+    "boot_c": 250,
+    "enpv_lo_pct": 5.0,
+    "sev_resolution": 9,
+    "sev_seeds": 8
+  },
+  "policy_rule": "flat",
+  "recovery_interm": 0.11782952093890374,
+  "recovery_spike": 0.00013095693536465967,
+  "weights": {
+    "pnl": 0.3,
+    "traj": 0.25,
+    "cal": 0.2,
+    "c": 0.1,
+    "write": 0.15
+  },
+  "pnl_proxy": {
+    "total_flat_point": 537817.4907635055,
+    "approval_rate_flat_point": 0.35946687573500585,
+    "total_flat_cons": 355786.32546464715,
+    "approval_rate_flat_cons": 0.26969815758526067,
+    "total_timing_point": 570298.661552675,
+    "approval_rate_timing_point": 0.5985887887103096,
+    "total_timing_cons": 422188.51610475476,
+    "approval_rate_timing_cons": 0.4794198353586829,
+    "headline_rule": "flat_cons",
+    "our_total": 355786.32546464715,
+    "legacy_total": -2559745.662274491,
+    "approve_all_total": -2559745.662274491,
+    "oracle_total": 4751413.551247706,
+    "n_holdout": 2551,
+    "uplift_vs_legacy": 2915531.9877391383,
+    "uplift_vs_flat_baseline": 0.0,
+    "approval_rate_headline": 0.26969815758526067,
+    "norm": 0.39877834726219324
+  },
+  "traj_proxy": {
+    "weighted_mae": 0.020650446820069,
+    "naive_weighted_mae": 0.025913014281059018,
+    "norm_err": 0.7969141141238569,
+    "score": 0.20308588587614307,
+    "n_cohorts": 13
+  },
+  "cal_proxy": {
+    "coverage": 0.7,
+    "mean_width": 0.07872697945661936,
+    "n_bins_used": 20,
+    "score": 0.7972082567704727,
+    "mean_predicted_pd": 0.18472243658275292,
+    "empirical_default_rate": 0.2061936495491964
+  },
+  "c_proxy": {
+    "naive_mae": 0.10871929685135738,
+    "gcomp_mae": 0.08688305322752658,
+    "norm": 0.20084975028568874,
+    "available": true
+  },
+  "writeup_proxy": {
+    "checklist": {
+      "scorecard": false,
+      "pnl_backtest_fig": false,
+      "coverage_curve": false,
+      "compute_curve": false,
+      "writeup_md": false
+    },
+    "frac": 0.0
+  },
+  "weighted_proxy": 0.34993160203035717
+}

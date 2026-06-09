@@ -147,33 +147,53 @@ def _apply_calibrator(iso, lower, point, upper):
 def build_submission_a(
     ds: data.Dataset,
     models,
-    recovery_rate: float,
-    oot_iso=None,
+    rec_interm: float,
+    rec_spike: float,
 ) -> pd.DataFrame:
     """columns: applicant_id, decision, predicted_pd, pd_lower_90, pd_upper_90.
 
-    Scores the decision frame with the hazard ensemble (lifetime PD per model ->
-    ensemble point + 5/95 bounds), out-of-time-calibrates the PDs (``oot_iso``),
-    applies the conservative upper-bound NPV decision rule on the CALIBRATED upper
-    PD, then LEFT-JOINs onto the expected applicant_id order. Any missing applicant
-    gets the population-mean PD + decision 0.
+    Scores the decision frame with the hazard ensemble via
+    policy.portfolio_decisions (WS1 timing-integrated E[NPV] rule by default,
+    controlled by config.POLICY_RULE / POLICY_CONSERVATIVE), then LEFT-JOINs onto
+    the expected applicant_id order. Any missing applicant gets the
+    population-mean PD + decision 0.
+
+    The hazard ensemble itself is the methodology-of-record outcome model
+    (selective-label safe: fit unweighted on funded labeled rows, excludes
+    prior_underwriter_score). The reported PD columns are recalibrated by the WS3
+    split-conformal band below.
     """
     df = ds.decision_frame.reset_index(drop=True)
 
     X = features.build_features(df)
-    samples = _ensemble_lifetime_pd(models, X)  # (n_models, n)
-    lower, point, upper = calibration.ensemble_intervals(
-        samples, lo=config.INTERVAL_LOWER_Q, hi=config.INTERVAL_UPPER_Q
-    )
-    # Out-of-time calibration (monotone) before the decision, so approval uses the
-    # calibrated upper PD bound.
-    lower, point, upper = _apply_calibrator(oot_iso, lower, point, upper)
-
     amount = pd.to_numeric(df["requested_amount"], errors="coerce").to_numpy(dtype=float)
-    # Decide on the conservative UPPER PD bound.
-    decision = policy.decide(upper, amount, recovery_rate)
-    # A loan with an unusable amount cannot be priced -> decline.
-    decision = np.where(np.isfinite(amount), decision, 0).astype(int)
+
+    res = policy.portfolio_decisions(
+        models, X, amount, rec_interm, rec_spike,
+        rule=config.POLICY_RULE, conservative=config.POLICY_CONSERVATIVE,
+    )
+    decision = res["decision"].astype(int)
+    point = res["predicted_pd"]
+    lower = res["pd_lower_90"]
+    upper = res["pd_upper_90"]
+
+    # WS3: split-conformal recalibration of the reported PD + 90% band, fit on the
+    # validation funded subset (the natural out-of-time set with outcomes). The
+    # decision above is unchanged; only the reported PD columns are recalibrated.
+    val = ds.validation
+    val_funded = val[val["default_flag"].notna()].reset_index(drop=True)
+    if len(val_funded) >= 50:
+        Xv = features.build_features(val_funded)
+        resv = policy.portfolio_decisions(
+            models, Xv,
+            pd.to_numeric(val_funded["requested_amount"], errors="coerce").to_numpy(float),
+            rec_interm, rec_spike,
+            rule=config.POLICY_RULE, conservative=config.POLICY_CONSERVATIVE,
+        )
+        hw = calibration.fit_pd_band(
+            resv["predicted_pd"], val_funded["default_flag"].to_numpy(float)
+        )
+        lower, point, upper = calibration.apply_pd_band(hw, point)
 
     scored = pd.DataFrame(
         {
@@ -237,9 +257,16 @@ def build_submission_b(
     dec_map = dict(zip(sub_a["applicant_id"].astype(str), sub_a["decision"].astype(int)))
     decisions = df["applicant_id"].astype(str).map(dec_map).fillna(0).astype(int).to_numpy()
 
-    traj = survival.predict_trajectory(
-        models, df, decisions, cohort_weeks, oot_iso=oot_iso
-    )
+    # WS2: out-of-time CIF recalibration scale, fit on the validation funded subset.
+    val = ds.validation
+    val_funded = val[val["default_flag"].notna()].reset_index(drop=True)
+    cif_scale = 1.0
+    if len(val_funded) >= 50:
+        cif_scale = survival.fit_cif_scale(
+            models, val_funded, val_funded["default_flag"].to_numpy(float)
+        )
+
+    traj = survival.predict_trajectory(models, df, decisions, cohort_weeks, cif_scale=cif_scale)
 
     # Anchor on the template grid to guarantee the exact 13x13 row set/order.
     template = pd.read_csv(config.SUBMISSION_B_TEMPLATE_CSV)
@@ -342,12 +369,14 @@ def build_submission_c(
 # --------------------------------------------------------------------------- #
 
 
-def main() -> None:
+def main(compute_level: str = "high") -> None:
+    from . import compute as compute_mod
     from . import propensity, recovery
 
+    budget = compute_mod.budget(compute_level)
     config.SUBMISSION_DIR.mkdir(exist_ok=True)
 
-    print("[1/7] Loading data...")
+    print("[1/6] Loading data...")
     ds = data.load_dataset()
     labeled = ds.labeled_train
     print(
@@ -358,6 +387,7 @@ def main() -> None:
     # Identification diagnostics (NOT used to reweight the fit -- they justify why
     # we do not). The funding rule is deterministic => positivity fails => IPW/DR
     # are not identified; prior_underwriter_score is excluded from the outcome model.
+    # (Methodology-of-record honesty, preserved across the WS1-WS5 scoring merge.)
     rule = propensity.deterministic_funding_rule(ds.train)
     oos = propensity.out_of_support_fraction(labeled, ds.decision_frame)
     print(
@@ -369,39 +399,34 @@ def main() -> None:
         f"{oos:.1%} of decision applicants are below the funded-set min (out of support)"
     )
 
-    print("[2/7] Asserting no censoring in labeled set...")
+    print("[2/6] Asserting no censoring in labeled set...")
     from . import survival_data
 
     survival_data.assert_no_censoring(labeled)
 
-    seeds = [config.RANDOM_SEED + i for i in range(config.N_BAG_SEEDS)]
-    print(f"[3/7] Fitting hazard ensemble ({len(seeds)} seeds)...")
+    seeds = [config.RANDOM_SEED + i for i in range(budget["bag_size"])]
+    print(f"[3/6] Fitting hazard ensemble (compute={compute_level}, {len(seeds)} seeds)...")
     models = survival.fit_hazard_ensemble(labeled, seeds)
 
-    print("[4/7] Estimating recovery rate...")
-    recovery_rate = recovery.estimate_recovery_rate(labeled)
-    print(f"      recovery_rate={recovery_rate:.4f}")
+    print("[4/6] Estimating recovery rates by timing...")
+    rec_interm, rec_spike = recovery.estimate_recovery_rates_by_timing(labeled)
+    print(f"      recovery in-term={rec_interm:.4f}  day-90 spike={rec_spike:.4f}")
 
-    print("[5/7] Out-of-time calibration on validation funded subset...")
-    oot_iso, oot = fit_oot_calibrator(ds, models)
-    if "ece_pre" in oot:
-        print(
-            f"      n={oot['n']} actual={oot['actual']:.4f} "
-            f"mean_pred {oot['mean_pred_pre']:.4f}->{oot['mean_pred_post']:.4f} "
-            f"ECE(oot) {oot['ece_pre']:.4f}->{oot['ece_post_cv']:.4f}(xval) "
-            f"applied={oot['applied']}"
-        )
-    else:
-        print(f"      calibration skipped (n={oot['n']}, applied={oot['applied']})")
-
-    print("[6/7] Building submissions A/B/C...")
-    sub_a = build_submission_a(ds, models, recovery_rate, oot_iso=oot_iso)
+    # WS1 timing-integrated E[NPV] policy (A) + WS2 CIF recalibration (B) + WS3
+    # split-conformal PD band (A). The hazard ensemble is master's selective-label
+    # safe outcome model; the OOT-isotonic path (config.APPLY_OOT_CALIBRATION,
+    # survival.predict_trajectory's oot_iso= arg) remains available as an
+    # alternative recalibration but is superseded here by the WS2/WS3 estimators
+    # the scorecard measures against.
+    print(f"[5/6] Building submissions A/B/C (policy={config.POLICY_RULE}, "
+          f"conservative={config.POLICY_CONSERVATIVE})...")
+    sub_a = build_submission_a(ds, models, rec_interm, rec_spike)
     sub_a.to_csv(config.FILE_A, index=False)
 
-    sub_b = build_submission_b(ds, models, sub_a, oot_iso=oot_iso)
+    sub_b = build_submission_b(ds, models, sub_a)
     sub_b.to_csv(config.FILE_B, index=False)
 
-    sub_c = build_submission_c(ds, models, oot_iso=oot_iso)
+    sub_c = build_submission_c(ds, models)
     sub_c.to_csv(config.FILE_C, index=False)
 
     # --- Sanity values (reported, not gating).
@@ -416,7 +441,7 @@ def main() -> None:
     width_c = float((sub_c["pd_cf_upper_90"] - sub_c["pd_cf_lower_90"]).mean())
     print(f"      mean band width  A={width_a:.4f}  C={width_c:.4f}")
 
-    print(f"[7/7] Validating submission in-process at {config.SUBMISSION_DIR}...")
+    print(f"[6/6] Validating submission in-process at {config.SUBMISSION_DIR}...")
     _validate_in_process()
 
 

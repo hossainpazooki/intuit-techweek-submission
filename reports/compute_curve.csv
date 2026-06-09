@@ -1,0 +1,4 @@
+compute,bag_size,weighted_proxy,pnl_norm,traj_score,cal_score,cal_coverage,c_norm,write_frac
+low,3,0.445,0.4197,0.4067,0.8969,0.9333,0.0802,0.2
+med,5,0.4611,0.4242,0.4249,0.9259,0.9,0.1245,0.2
+high,8,0.4691,0.4327,0.4224,0.912,0.89,0.2128,0.2
