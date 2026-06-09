@@ -15,13 +15,14 @@ fallback — always commit and push your work to `origin`** (see Git below).
 ## What this repo is
 
 Our solution to the SMB Underwriting Challenge. Authoritative docs:
+- [`README.md`](README.md) — unified entry point: challenge framing, method, results,
+  learnings, run + submit instructions (the challenge brief is folded in here).
 - [`METHODOLOGY.md`](METHODOLOGY.md) — methodology of record (tiered, honest).
-- [`README_SOLUTION.md`](README_SOLUTION.md) — orientation + run instructions.
 - [`docs/VERIFICATION.md`](docs/VERIFICATION.md) — adversarial verification record.
 - [`LEARNINGS.md`](LEARNINGS.md) — non-obvious patterns, gotchas, operational
   knowledge (read this before touching the pipeline — it lists the validator traps,
   data realities, and design tricks that will bite you otherwise).
-- `README.md`, `dataset/README.md` — upstream Intuit material (challenge brief).
+- `dataset/README.md` — upstream Intuit dataset guide.
 
 The modeling spine is a **weekly competing-risks discrete-time hazard** (default vs
 payoff); Deliverables A (PD + NPV policy), B (cohort trajectory), C (counterfactuals)
