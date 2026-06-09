@@ -1,38 +1,128 @@
 # SMB Underwriting Challenge — Solution
 
-Our solution to the Intuit TechWeek SMB Underwriting Challenge. The challenge
-brief and dataset are upstream Intuit material (see `README.md`,
-`dataset/README.md`); this file documents *our* approach and how to reproduce it.
+Our solution to the **Intuit TechWeek NYC 2026 SMB Underwriting Challenge**: score
+small-business loan applicants for probability of default, decide who to fund, project
+default trajectories, and answer causal "what-if" queries — from data where the
+outcomes you most need are **systematically missing**.
 
-> **Methodology of record: [`METHODOLOGY.md`](METHODOLOGY.md).** It is written to be
-> judge-ready and honest — it separates what runs today (exploration + guardrails)
-> from what is *proposed* (baseline) vs *aspirational* (research stack), and states
-> the identification limits of the problem. Read it for the full technical argument;
-> this file is the short orientation + run instructions.
+The challenge brief and dataset are upstream Intuit material (`README.md`,
+`dataset/README.md`). This file is the self-contained tour of *our* approach: the
+problem, the methods, the results, and what we learned. The full technical argument is
+in [`METHODOLOGY.md`](METHODOLOGY.md) (methodology of record) and
+[`LEARNINGS.md`](LEARNINGS.md) (gotchas); the graded writeup is
+[`submission/submission_D_writeup.md`](submission/submission_D_writeup.md).
 
-**Honest status in one line:** the competing-risks hazard ensemble (fit **unweighted**,
-no IPW; `prior_underwriter_score` excluded) is wrapped in a **score-weighted optimization
-layer (WS1–WS5)** — a timing-integrated E[NPV] decision rule, split-conformal PD bands,
-out-of-time trajectory recalibration, and a proxy scorecard — and produces A/B/C that
-**pass the official validator** (`RESULT: PASS`, 0 warnings). The remaining
-**stretch/aspirational** tiers (a broader LightGBM/XGBoost model family, DR-OPE, DML,
-DeepHit) are proposed, not built; IPW reweighting is **removed** outright (positivity
-fails, so it is not identified).
+---
 
-## How the results were improved
+## 1. The challenge
 
-The headline is a **proxy** score, not the official one: the true score uses hidden
-test labels and hidden per-term normalization. We measure where ground truth exists —
-fit on train funded+matured loans, evaluate on the **out-of-time validation funded**
-holdout (2,551 loans) — aggregated with the brief's published weights (p.14). Reproduce
-with `python scripts/run_scorecard.py --compute high`.
+You are handed a labeled history of SMB loans and must produce four deliverables on a
+held-out population of **13,306** applicants:
 
-**Two lineages were merged.** A *methodology-of-record* line fixed the outcome model to
-be selective-label safe (drop `prior_underwriter_score`, remove IPW under global
-positivity failure). A *scoring* line (WS1–WS5) added the economics, policy, calibration,
-and measurement layers. The shipped model is the **scoring layer on top of the corrected
-outcome model** — so the improvements below are real, not an artifact of a weaker
-baseline.
+| | Deliverable | What it asks |
+|---|---|---|
+| **A** | Decisions | Approve/decline + a calibrated PD and 90% band per applicant |
+| **B** | Trajectory | Cumulative default rate over a 13-week horizon, per weekly cohort |
+| **C** | Counterfactuals | `P(default | do(feature = value))` — *interventional*, not observational |
+| **D** | Writeup | A 5-section technical defense (causal reasoning weighted most) |
+
+**The catch — selective labels.** Outcomes (`default_flag`, timing, recovery) exist
+*only* for loans the **legacy underwriter funded and that then matured**: 51,722 of
+85,340 train rows, and **zero** of the test rows. The applicants you must score include
+all the ones the old policy *declined* — and their ground truth does not exist. You
+cannot directly measure how good your model is on the population you're graded on.
+
+---
+
+## 2. What the data forced
+
+Three textbook assumptions break here, and each one changed a design decision. (All
+numbers recomputed from the raw CSVs via `scripts/eda.py`.)
+
+- **Positivity fails — globally.** The legacy funding rule is a *deterministic
+  threshold*: `funded ⇔ prior_underwriter_score ≥ ~0.273`, **zero** mismatches, no
+  overlap (max declined `0.27297` < min approved `0.27301`). So the funding propensity
+  is degenerate {0,1}, and **IPW / doubly-robust reweighting is not identified** — there
+  are no funded look-alikes for a declined applicant at the same score. We **fit the
+  outcome model unweighted**, **remove the IPW path entirely** (`propensity.py` is a
+  pure positivity *diagnostic*), and **exclude `prior_underwriter_score`** and its
+  consequences from the features — ~44% of the decision population sits below the funded
+  set's minimum score (out of training support). We bound or abstain rather than
+  silently extrapolate.
+
+- **The payoff is asymmetric and time-dependent.** A repaid loan nets `≈0.0875·R`; a
+  default destroys most of `R`. And default *timing* is bimodal — in-term defaults span
+  days 3–60, then a **spike at exactly day 90** with **zero** mass in between. The day-90
+  spike recovers ≈ 0 (empirical recovery `0.0001` vs `0.118` in-term): near-total losses,
+  not near-payers. A flat PD threshold can't see this; the decision rule must integrate
+  over *when* default happens.
+
+- **Missingness is structural.** The six bank-feed columns are null **iff**
+  `has_linked_bank_feed == False`. Missingness is signal — we keep the NaNs (HistGB
+  splits on them) and add `*_was_null` indicators rather than imputing.
+
+---
+
+## 3. Method: one hazard spine, four deliverables
+
+A single **weekly competing-risks discrete-time hazard model** is the spine for all four
+deliverables. One 3-class `HistGradientBoostingClassifier` on a person-period expansion
+emits per-week hazards `h_d` (default) and `h_p` (payoff); the competing-risks recursion
+gives `CIF_d(t)` and lifetime PD. The stack is **sklearn-only** (HistGB + isotonic),
+all-float features with NaN preserved, deterministic per `(seed, compute budget)`.
+
+On top of that spine sits the **WS1–WS5 scoring layer**:
+
+```mermaid
+flowchart TD
+  data["train.csv — funded + matured only<br/>selective labels · 17.45% default"] --> ens["competing-risks hazard ensemble<br/>unweighted · prior_underwriter_score excluded"]
+  ens --> A["A — decisions<br/>timing E&#91;NPV&#93; (WS1) + split-conformal band (WS3)"]
+  ens --> B["B — trajectory<br/>cohort CIF + OOT recalibration (WS2)"]
+  ens --> C["C — counterfactuals<br/>do() + g-computation (WS4)"]
+  A --> sub["submission/{A,B,C}.csv + D writeup"]
+  B --> sub
+  C --> sub
+  sub --> val{"validate_submission.py"}
+  val -->|"PASS · 0 errors / 0 warnings"| ship["ready to upload"]
+  ens -. measured on OOT funded holdout .-> sc["run_scorecard.py (WS5)<br/>weighted proxy 0.5591"]
+```
+
+- **A — timing-integrated E[NPV] (WS1) + split-conformal band (WS3).** Approve iff the
+  NPV *integrated over default timing* is positive:
+  `E[NPV] = Σ_t P(default in week t)·NPV(t) + P(repay)·0.0875R`, where `NPV(t)` credits
+  the daily ACH draws a *late* in-term defaulter pays before defaulting and charges
+  day-90-window defaults as total losses. The reported PD carries a **split-conformal**
+  90% band (conformity measured on the raw point — a *fitted* recalibrator under-covers
+  out-of-fold). This approves **~59%** (vs ~27% for the conservative flat rule),
+  recovering profitable late-defaulters.
+- **B — cohort trajectory + OOT recalibration (WS2).** Approved-cohort `CIF_d` averaged
+  per (cohort_week, age), monotone by construction, with a single-parameter out-of-time
+  recalibration (the hazard under-predicts on later cohorts, lifetime ratio ≈ 1.12).
+- **C — `do()` with structural propagation + g-computation (WS4).** `dag.propagate_intervention`
+  sets the intervened feature **and its deterministic descendants** (toggling
+  `has_linked_bank_feed` rewrites the whole bank-feed block; ratios recompute), then
+  reads lifetime PD off the ensemble — *standardization / g-computation in spirit*, with
+  non-manipulable identity features (sector, vintage) refused rather than faked. Because
+  real data can't validate interventional accuracy, a **fidelity-gated synthetic harness**
+  (the sibling `closed-loop-default-detection` repo) certifies the *direction*:
+  g-computation MAE **0.085** vs naive conditioning **0.109** on the strong-propagation
+  slice.
+
+---
+
+## 4. Results — and how they improved
+
+The headline is a **proxy**, not the official score (the true score uses hidden test
+labels + hidden per-term normalization). We measure where ground truth exists — fit on
+train funded+matured loans, evaluate on the **out-of-time validation funded** holdout
+(2,551 loans) — aggregated with the brief's published p.14 weights. Reproduce with
+`python scripts/run_scorecard.py --compute high`.
+
+**Two lineages were merged.** A *methodology-of-record* line made the outcome model
+selective-label safe (drop `prior_underwriter_score`, remove IPW). A *scoring* line
+(WS1–WS5) added economics, policy, calibration, and measurement. The shipped model is
+the **scoring layer on top of the corrected model** — so the gains are real, not an
+artifact of a weak baseline.
 
 ```mermaid
 flowchart LR
@@ -58,163 +148,108 @@ flowchart LR
 
 **Step-0 baseline → shipped (compute=high): weighted proxy `0.3499 → 0.5591` (+0.209).**
 
-| Term | Weight | Baseline | Shipped | Δ·w | What changed — and what *kind* of change it is |
+| Term | Weight | Baseline | Shipped | Δ·w | What changed — and what *kind* of change |
 |---|---|---|---|---|---|
-| **S_write** | 0.15 | 0.000 | 0.800 | **+0.120** | *Deliverable artifacts now exist* (scorecard, P&L + compute-curve figures, writeup). **Bookkeeping, not model skill** — but 15% of the rubric. Largest single contributor. |
-| **S_traj** | 0.25 | 0.203 | 0.422 | **+0.055** | **Real modeling** — WS2 out-of-time CIF recalibration (`fit_cif_scale`); cohort-weighted CDR MAE **0.0207 → 0.0150**. |
-| **S_cal** | 0.20 | 0.797 | 0.912 | **+0.023** | **Real modeling** — WS3 split-conformal PD band; 90% interval coverage **0.70 → 0.89**. |
-| **S_P&L** | 0.30 | 0.399 | 0.433 | **+0.010** | **Policy choice** — WS1 timing-integrated E[NPV] (`rule="timing"`). Headline "+$91,157 vs flat" but only +0.010 normalized; approves **59%** vs the flat rule's ~27% — more modeled profit *and* more risk. |
-| **S_C** | 0.10 | 0.201 | 0.213 | **+0.001** | WS4 g-computation, certified against the `closed-loop-default-detection` harness (g-comp MAE **0.085** vs naive conditioning **0.109**). Small normalized weight. |
+| **S_write** | 0.15 | 0.000 | 0.800 | **+0.120** | Deliverable artifacts now exist (scorecard, figures, writeup). **Bookkeeping, not model skill** — but 15% of the rubric, and the single largest contributor. |
+| **S_traj** | 0.25 | 0.203 | 0.422 | **+0.055** | **Real modeling** — WS2 OOT CIF recalibration; cohort-weighted CDR MAE **0.0207 → 0.0150**. |
+| **S_cal** | 0.20 | 0.797 | 0.912 | **+0.023** | **Real modeling** — WS3 split-conformal band; 90% coverage **0.70 → 0.89** at width 0.13. |
+| **S_P&L** | 0.30 | 0.399 | 0.433 | **+0.010** | **Policy / risk choice** — WS1 timing E[NPV]. Headline **+$91,157** ($603,817 vs $512,660 flat) but only +0.010 normalized; approves **59%** vs ~27% — more modeled profit *and* more risk. |
+| **S_C** | 0.10 | 0.201 | 0.213 | **+0.001** | WS4 g-computation, harness-certified (0.085 vs 0.109). Small at its 10% weight. |
 | **Weighted** | | **0.3499** | **0.5591** | **+0.209** | |
 
-**The honest read.** Of the +0.209, **+0.12 is "we produced the deliverables"** (real
-under the rubric, but not modeling), **+0.08 is genuine modeling** (trajectory
-recalibration + conformal calibration), and the P&L "win" is a **+0.01 risk-appetite
-choice** dressed up as a $91K headline. C is a near-wash at its 10% weight. Two caveats
-worth stating plainly:
+**The honest read.** Of the +0.209: **+0.12 is "we produced the deliverables"** (real
+under the rubric, not modeling), **+0.08 is genuine modeling** (trajectory recalibration
++ conformal calibration), and the P&L "win" is a **+0.01 risk-appetite choice** behind a
+$91K headline. Two caveats we state plainly:
 
-- The **baseline already shipped an isotonic OOT recalibration**, so part of the WS2
-  trajectory gain existed independently on the prior line; the table credits WS2 against
-  the *original* Step-0 baseline, which had neither.
-- Compute scaling (`scripts/run_compute_curve.py` → `reports/compute_curve.csv`) shows
-  the *modeling* terms rise monotonically low→high (weighted **0.445 → 0.461 → 0.469**
-  before the write bump); the write component adds a flat +0.09 on top to reach 0.559.
+- The baseline already shipped an isotonic OOT recalibration, so part of the WS2 gain
+  existed independently — the table credits WS2 against the *original* Step-0 baseline.
+- Compute scaling (`run_compute_curve.py`) shows the *modeling* terms rise monotonically
+  low→high (**0.445 → 0.461 → 0.469** before the write bump); write adds a flat +0.09.
 
-## Quick start
+---
+
+## 5. Key learnings
+
+What we'd tell the next team, distilled from `LEARNINGS.md` and `docs/VERIFICATION.md`:
+
+- **Identification, not estimation, was the binding constraint.** The deterministic
+  funding rule means *no amount of reweighting* recovers declined-applicant outcomes.
+  Recognizing that IPW was unsound here — and removing it — was worth more than any model
+  tweak. Honest bounds beat a confident-looking number you can't defend to a regulator.
+- **Let the data's structure pick the model.** Bimodal default timing → a *competing-risks
+  hazard*, not a classifier. A point-mass payoff at day 60 and a day-90 loss spike →
+  separate the two horizons in the NPV. Structural missingness → keep NaNs + indicators.
+- **One fit, four deliverables.** A single 3-class hazard model (`{survive, default,
+  payoff}`) gives `predict_proba = [1−h_d−h_p, h_d, h_p]` directly — hazards sum to ≤ 1,
+  no duplicated frames — and A/B/C all read off it, so they can't disagree.
+- **Calibration is decision-critical, not cosmetic.** The model under-predicts
+  out-of-time (mean 0.187 vs realized 0.206); the fix moves *decisions*, not just a
+  metric. Never report a fitted recalibrator's in-sample ECE/coverage (≈ optimal by
+  construction) — gate on **cross-fitted / split-conformal held-out** numbers, measured
+  on the **raw** point so you don't fool yourself.
+- **`do()` ≠ conditioning, and say so where you can't prove it.** Counterfactuals must
+  propagate structural descendants; for the rest, label it observational rather than
+  overclaim a full SCM where positivity fails. When the real data can't validate a claim,
+  build a *fidelity-gated synthetic oracle* and certify the **direction** there.
+- **The validator is the law — and trust nothing's "PASS" until you've run it.** NaN is
+  rejected everywhere (declines included); build by LEFT-JOIN onto the shipped
+  `expected_ids/*` lists, not the data; B must be the exact 13×13 integer grid, monotone
+  in age. The pipeline self-validates in-process at the end of every run.
+- **Recompute, then refute.** Every number here came from the raw CSVs, and an
+  adversarial verification pass caught a real bug — an earlier draft's decision rule was
+  mathematically backwards (lower- vs upper-bound) — *before* it reached the writeup.
+
+---
+
+## 6. Reproduce
 
 ```bash
-python -m venv .venv && . .venv/Scripts/activate   # Windows; use bin/activate on *nix
+python -m venv .venv && . .venv/Scripts/activate     # Windows; use bin/activate on *nix
 pip install -r requirements-dev.txt
 
-unzip dataset/dataset-compressed.zip -d dataset/    # -> train/validation/test.csv
+unzip dataset/dataset-compressed.zip -d dataset/      # -> train/validation/test.csv
 
-python scripts/eda.py             # structural facts about the data
-python scripts/run_all.py         # build submission/{A,B,C}.csv + validate (=> PASS)
-python scripts/validate.py        # re-run Intuit's gate; must print PASS
-python scripts/run_scorecard.py --compute high   # proxy scorecard -> reports/
-python scripts/run_compute_curve.py              # compute-scaling proof
-python scripts/make_figures.py    # P&L backtest figure
-python scripts/make_writeup_pdf.py               # submission/submission_D_writeup.{md->pdf}
+python scripts/eda.py                                 # structural facts about the data
+python scripts/run_all.py                             # build submission/{A,B,C}.csv + validate (=> PASS)
+python scripts/run_scorecard.py --compute high        # proxy scorecard -> reports/
+python scripts/run_compute_curve.py                   # compute-scaling proof
+python scripts/make_figures.py                        # P&L backtest figure
+python scripts/make_writeup_pdf.py                    # submission/submission_D_writeup.{md -> pdf}
 ```
 
-## What the data is (verified — drives every modeling choice)
+`--compute {low,med,high}` trades runtime for ensemble size / bootstrap reps and is
+deterministic per `(seed, budget)`. The harness for C lives in the sibling
+`closed-loop-default-detection` repo; `run_scorecard.py` locates it automatically.
 
-- **Temporal split.** train = Jan 2024–Jun 2025 (the past); validation + test =
-  the 13 weekly cohorts Jun 30–Sep 28 2025 (the forecast window). We decide on
-  validation + test = **13,306** applicants for Deliverable A.
-- **Selective labels with a *deterministic* funding rule.** Outcomes exist *only*
-  for funded, matured loans (51,722 of 85,340 train rows; **17.45%** default rate).
-  The legacy funding decision is a **perfect threshold** on `prior_underwriter_score`
-  (`prior_decision==1 iff score>=~0.273`, zero mismatches, no overlap) — so the
-  funding propensity is degenerate and **positivity fails globally**. IPW / DR are
-  *not identified* for declined applicants; we bound or abstain rather than reweight.
-- **Default timing has a point mass.** Paid loans repay at **exactly day 60**;
-  defaults span days 3–60 and then a **spike at exactly day 90** (~22.5%), with none
-  in between. Interest accrues over the 60-day term; default is observed through day 90
-  — the NPV must separate the two horizons.
-- **Informative missingness.** Bank-feed block is null **iff**
-  `has_linked_bank_feed==False` (~36% of train); `days_since_*` nulls mean "no prior event."
-  Missingness is signal — keep NaNs + indicators, don't blind-impute.
-- **Causal vs predictive (C).** `do(feature=value)` ≠ conditioning; a one-feature
-  re-score (or a SHAP value) is *observational*. We propagate structural features
-  (bank-feed block, engineered ratios) and report everything else as observational
-  with the gap surfaced.
-
-## Decision rule (shipped: timing-integrated E[NPV])
-
-Default *timing* carries the economics: a loan that repays returns ~8.75% of principal,
-a *late in-term* defaulter still pays the daily ACH draws it makes before defaulting, and
-a day-90-window default is a near-total loss (empirical recovery ≈ 0.0001 vs 0.118
-in-term — two rates from `recovery.estimate_recovery_rates_by_timing`). So the shipped
-rule (`config.POLICY_RULE = "timing"`, `policy.portfolio_decisions`) **approves iff the
-expected NPV integrated over default timing is positive**,
-`E[NPV] = Σ_t P(default in week t)·NPV(t) + P(repay)·0.0875R`. A flat PD threshold
-over-declines profitable late-defaulters; the timing rule recovers them — **+$91,157**
-on the OOT funded holdout ($603,817 vs $512,660), at a **59%** approval rate.
-
-The prior **flat** rule (approve iff E[NPV] > 0 at the *upper* PD bound; break-even
-PD ≈ 8.0–8.9%) is retained as `rule="flat"` and is the conservative baseline the
-scorecard compares against. The reported PD columns carry a **split-conformal** 90% band
-(`calibration.fit_pd_band`); an isotonic OOT path (`config.APPLY_OOT_CALIBRATION`) remains
-available but is not the shipped recalibrator. See `METHODOLOGY.md` §3 and §9.
-
-## Pipeline at a glance
-
-One fit feeds all four deliverables; WS1–WS5 are the labelled add-ons on top of the
-selective-label-safe ensemble. The validator and the proxy scorecard are the two gates.
-
-```mermaid
-flowchart TD
-  data["train.csv — funded + matured only<br/>(selective labels, 17.45% default)"] --> ens["competing-risks hazard ensemble<br/>unweighted · prior_underwriter_score excluded"]
-  ens --> A["A — decisions<br/>timing E&#91;NPV&#93; (WS1) + split-conformal band (WS3)"]
-  ens --> B["B — trajectory<br/>cohort CIF + OOT recalibration (WS2)"]
-  ens --> C["C — counterfactuals<br/>do() + g-computation (WS4)"]
-  A --> sub["submission/{A,B,C}.csv + D writeup"]
-  B --> sub
-  C --> sub
-  sub --> val{"validate_submission.py"}
-  val -->|"PASS · 0 errors / 0 warnings"| ship["ready to upload"]
-  ens -. measured on OOT funded holdout .-> sc["run_scorecard.py (WS5)<br/>weighted proxy 0.5591"]
-```
-
-## Layout
-
-All modules below are implemented. `survival_data`, `propensity`, `recovery`, `dag`,
-`economics`, `compute` are modules added during implementation.
+## 7. Layout
 
 ```
 src/smb/
-  config.py        loan economics + cohort/hazard constants
+  config.py        loan economics, cohort/hazard constants, POLICY_RULE
   data.py          load/clean, cohort assignment, label + missingness
-  features.py      numeric feature matrix + intervenable metadata + propagation
+  features.py      all-float feature matrix + intervenable metadata + propagation
   survival_data.py weekly person-period builder (competing-risks layout)
-  survival.py      competing-risks hazard ensemble; CIF; B trajectory
+  survival.py      competing-risks hazard ensemble; CIF; B trajectory + recalibration
   recovery.py      recovery rates by default timing (in-term vs day-90 spike)
-  propensity.py    funding-rule + positivity DIAGNOSTICS only (IPW removed)
-  model_pd.py      standalone binary HistGB+isotonic PD baseline (unweighted)
   economics.py     timing-integrated E[NPV] over default-week probabilities (WS1)
   policy.py        portfolio decision rule: timing (shipped) / flat (baseline) (A)
+  propensity.py    funding-rule + positivity DIAGNOSTICS only (IPW removed)
+  model_pd.py      standalone binary HistGB+isotonic PD baseline (unweighted)
   calibration.py   clip/order, isotonic (OOT), ensemble + split-conformal bands (WS3)
   compute.py       compute-budget knobs (bag size, HP width, bootstrap reps)
   dag.py           intervention DAG + structural propagation (C)
   causal.py        counterfactual PD via do() off the hazard ensemble (C)
   pipeline.py      orchestrates -> submission/*.csv + in-process validate
 scripts/
-  eda.py              reproducible exploration / premise validation
-  run_all.py          build all deliverables + validate  (=> RESULT: PASS)
-  validate.py         wrapper around Intuit's validate_submission.py
-  run_scorecard.py    proxy scorecard (weighted by the brief's p.14 weights)
-  run_compute_curve.py compute-scaling proof -> reports/compute_curve.csv
-  make_figures.py     P&L backtest figure
-  make_writeup_pdf.py submission_D_writeup.md -> .pdf
-reports/            committed scorecard JSON + figures (proxy evidence)
-submission/         the four output files (flat, exact names) + writeup .md/.pdf
+  eda.py / run_all.py / validate.py        explore · build+validate · re-gate
+  run_scorecard.py / run_compute_curve.py  proxy scorecard · compute-scaling proof
+  make_figures.py / make_writeup_pdf.py    P&L figure · writeup .md -> .pdf
+reports/           committed scorecard JSON + figures (proxy evidence)
+submission/        the four deliverables (flat, exact names) + writeup .md/.pdf
 ```
 
-## Deliverable status
+## 8. Remotes
 
-End-to-end and passing; WS1–WS5 scoring layer shipped, stretch/aspirational tiers proposed.
-
-- [x] **Premises validated** — `scripts/eda.py` (selective labels, deterministic
-      funding rule, timing, missingness, overlap, query structure, cohort sizes).
-- [x] **A** — decisions: competing-risks lifetime PD (outcome model excludes the
-      legacy `prior_underwriter_score`; fit unweighted, no IPW) → **timing-integrated
-      E[NPV]** decision (WS1) with a **split-conformal** 90% PD band (WS3). Approves
-      **~59%** at the point-E[NPV] bound (vs ~27% for the conservative flat rule),
-      recovering profitable late-defaulters (+$91,157 OOT).
-- [x] **B** — trajectory: cohort × loan-age cumulative default off the hazard
-      ensemble over approved loans, monotone by construction, with **out-of-time CIF
-      recalibration** (WS2; CDR MAE 0.0207 → 0.0150).
-- [x] **C** — counterfactuals: do() off the ensemble with structural propagation
-      (bank-feed block, engineered ratios); g-computation certified against the
-      `closed-loop-default-detection` harness (MAE 0.085 vs naive 0.109).
-- [x] **D** — writeup: `submission/submission_D_writeup.md` on the official 5-section
-      template (§3 causal weighted most), distilled from `METHODOLOGY.md` → exported to
-      `submission/submission_D_writeup.pdf`. **Note:** the writeup prose still carries
-      pre-merge P&L numbers ($570K/+$214K); refresh to the shipped model
-      ($603,817/+$91,157) before final upload (see merge-commit follow-up).
-
-## Remotes
-
-- `origin`  → private repo (our work)
+- `origin`   → `hossainpazooki/intuit-techweek-submission` (our private work)
 - `upstream` → `intuit/intuit-techweek-nyc-hackathon-2026` (official; pull updates only)

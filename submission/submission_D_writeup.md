@@ -49,10 +49,11 @@ is **sklearn-only** (HistGB + isotonic); features are all-float with NaN preserv
   defaulter pays before defaulting, and day-90-window defaults are charged as
   total losses (no term draws). Approve iff `E[NPV] > 0`. A flat PD threshold
   over-declines profitable late-defaulters; the timing rule recovers them.
-  **Realized backtest (high compute):** timing earns **$570,299** vs the flat
-  rule's **$355,786** on the funded holdout (**+$214,512**), against −$2.56M for
-  approve-all/legacy and a $4.75M hindsight ceiling. The 599 loans timing approves
-  but flat declines net **+$120/loan**.
+  **Realized backtest (high compute):** timing earns **$603,817** (approving 59%)
+  vs the conservative flat rule's **$512,660** (approving 27%) on the 2,551-loan
+  funded holdout (**+$91,157**), against −$2.56M for approve-all/legacy and a
+  $4.75M hindsight ceiling. The extra approvals timing wins back are exactly the
+  late-in-term defaulters whose pre-default ACH draws keep their E[NPV] positive.
 - **Deliverable B — cohort trajectory.** Approved-cohort `CIF_d` averaged per
   (cohort_week, age), monotone by construction. The hazard mildly under-predicts
   out-of-time (lifetime ratio ≈1.12), so we apply a **single-parameter OOT

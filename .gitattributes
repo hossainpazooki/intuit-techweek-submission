@@ -1,0 +1,10 @@
+# Binary deliverables/artifacts: never apply EOL (CRLF) conversion — it shifts
+# byte offsets and corrupts the files (the Deliverable-D PDF in particular).
+*.pdf binary
+*.png binary
+*.jpg binary
+*.zip binary
+
+# Submission CSVs are exact, validator-checked artifacts: keep LF, don't let
+# autocrlf rewrite them on Windows checkouts.
+submission/*.csv text eol=lf

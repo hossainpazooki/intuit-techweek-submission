@@ -26,7 +26,11 @@ OUT = ROOT / "submission" / "submission_D_writeup.pdf"
 # readable ASCII so the PDF renders cleanly without registering a Unicode TTF.
 UNICODE_MAP = {
     "≤": "<=", "≥": ">=", "≈": "~=", "≠": "!=",
-    "→": "->", "×": "x", "·": "*", "π": "pi",
+    # NB: the multiplication dot maps to a SPACED asterisk on purpose -- a bare
+    # "*" collides with the italic markdown regex below (it would pair with a
+    # genuine *emphasis* marker across a code span and emit invalid XML); a
+    # space-padded "*" can neither open nor close italics, so it stays literal.
+    "→": "->", "×": "x", "·": " * ", "π": "pi",
     "∏": "prod", "∑": "sum", "√": "sqrt", "∈": "in",
     "—": " - ", "–": "-", "…": "...", "′": "'",
     "“": '"', "”": '"', "‘": "'", "’": "'",
