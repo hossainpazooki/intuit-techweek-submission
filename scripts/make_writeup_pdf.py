@@ -31,7 +31,7 @@ UNICODE_MAP = {
     # genuine *emphasis* marker across a code span and emit invalid XML); a
     # space-padded "*" can neither open nor close italics, so it stays literal.
     "→": "->", "×": "x", "·": " * ", "π": "pi",
-    "∏": "prod", "∑": "sum", "√": "sqrt", "∈": "in",
+    "∏": "prod", "∑": "sum", "Σ": "sum", "√": "sqrt", "∈": "in", "±": "+/-",
     "—": " - ", "–": "-", "…": "...", "′": "'",
     "“": '"', "”": '"', "‘": "'", "’": "'",
     " ": " ", "≡": "==", "≈": "~=",
@@ -72,10 +72,12 @@ def main() -> int:
     h2 = ParagraphStyle("h2", parent=body, fontName="Helvetica-Bold", fontSize=12,
                         leading=13.5, spaceBefore=6, spaceAfter=2, keepWithNext=True)
     team = ParagraphStyle("team", parent=body, fontSize=11, spaceAfter=4)
+    quote = ParagraphStyle("quote", parent=body, fontName="Helvetica-Oblique",
+                           leftIndent=12, spaceAfter=4)
     # References are excluded from the 4-page body limit and the 11pt-body rule.
     refs = ParagraphStyle("refs", parent=body, fontSize=9, leading=10.5, spaceBefore=2)
 
-    story, bullets, para = [], [], []
+    story, bullets, para, quotes = [], [], [], []
     state = {"refs": False}
 
     def flush_para():
@@ -83,6 +85,11 @@ def main() -> int:
             story.append(Paragraph(inline(" ".join(para)),
                                    refs if state["refs"] else body))
             para.clear()
+
+    def flush_quote():
+        if quotes:
+            story.append(Paragraph(inline(" ".join(quotes)), quote))
+            quotes.clear()
 
     def flush_bullets():
         if bullets:
@@ -96,21 +103,31 @@ def main() -> int:
     for ln in lines:
         s = ln.strip()
         if not s:
-            flush_para(); flush_bullets(); continue
+            flush_para(); flush_bullets(); flush_quote(); continue
         if s.startswith("# "):
-            flush_para(); flush_bullets(); story.append(Paragraph(inline(s[2:]), h1))
+            flush_para(); flush_bullets(); flush_quote()
+            story.append(Paragraph(inline(s[2:]), h1))
         elif s.startswith("## "):
-            flush_para(); flush_bullets(); story.append(Paragraph(inline(s[3:]), h2))
-        elif s.startswith("- "):
-            flush_para(); bullets.append(s[2:])
-        elif s.startswith("**Team:**"):
+            flush_para(); flush_bullets(); flush_quote()
+            story.append(Paragraph(inline(s[3:]), h2))
+        elif s == ">" or s.startswith("> "):
             flush_para(); flush_bullets()
+            q = s[1:].lstrip()
+            if q:
+                quotes.append(q)
+            else:  # bare ">" separates blockquote paragraphs
+                flush_quote()
+        elif s.startswith("- "):
+            flush_para(); flush_quote(); bullets.append(s[2:])
+        elif s.startswith("**Team:**"):
+            flush_para(); flush_bullets(); flush_quote()
             story.append(Paragraph(inline(s), team))
         elif s.startswith("**References."):
-            flush_para(); flush_bullets(); state["refs"] = True; para.append(s)
+            flush_para(); flush_bullets(); flush_quote()
+            state["refs"] = True; para.append(s)
         else:
-            flush_bullets(); para.append(s)
-    flush_para(); flush_bullets()
+            flush_bullets(); flush_quote(); para.append(s)
+    flush_para(); flush_bullets(); flush_quote()
 
     doc = SimpleDocTemplate(str(OUT), pagesize=letter,
                             leftMargin=0.75 * inch, rightMargin=0.75 * inch,

@@ -243,7 +243,12 @@ feature swapped (and, equivalently, reading a SHAP attribution) answers the
 backdoor-adjusted / DML estimator is *not* implemented. Given the global positivity
 violation (§1a), several interventions are only **partially identified**; we widen
 intervals far from support and, where appropriate, abstain rather than report a
-point effect as if it were a solved causal quantity.
+point effect as if it were a solved causal quantity. The `closed-loop-default-
+detection` harness now demonstrates this exact limit empirically in its synthetic
+world: at full selection severity, backdoor adjustment cannot repair selection on an
+*unobserved* confounder — g-computation's advantage over naive conditioning collapses
+to statistically zero (§9, WS4) — which is independent of, and does not soften, the
+real-data positivity caveat above.
 
 **Regulatory defense.** For each stated driver we would argue sign, magnitude, and
 mechanism, and explicitly flag proxies — emphasizing that the model's drivers are
@@ -469,7 +474,14 @@ subset, 2,551 loans, as held-out eval). The TRUE score is not locally computable
   raw→0.875 vs isotonic→0.53). Binned coverage 0.70 → **0.900** at width 0.133.
 - **WS4 — C is g-computation-in-spirit**; the `closed-loop-default-detection`
   harness certifies it beats naive conditioning on the strong-propagation slice
-  (MAE 0.087 vs 0.109, sev 0.4).
+  across a 5-seed counterfactual sweep (seeds 7/13/42/101/2026, 900 queries each):
+  at severity 0.4, MAE **0.0797 ± 0.0135** vs naive **0.0988 ± 0.0154** — gap
+  +0.0191 ± 0.0046, positive on **5/5 seeds, no sign flips** (~19% relative).
+  The advantage has a regime boundary: at full severity the gap is +0.0021 ±
+  0.0022 with a sign flip on one seed — statistically zero, so we claim nothing
+  there. One disclosed trade-off: g-computation's bias is consistently *more*
+  negative than naive's (5/5 seeds; e.g. −0.0252 vs −0.0201) — it buys MAE at the
+  cost of slightly worse systematic underestimation.
 - **WS5 — Deliverable D** is `submission/submission_D_writeup.md`, auto-filled from
   the artifacts (scorecard, `pnl_backtest.png`, `compute_curve.png`).
 - **Compute scaling**: `scripts/run_compute_curve.py` → `reports/compute_curve.csv`;

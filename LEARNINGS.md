@@ -178,3 +178,23 @@ while building it. Every empirical number here was recomputed from the data
   (`docs/VERIFICATION.md`) flagged the prior draft's *lower*-PD-bound decision rule as
   mathematically backwards and corrected the break-even number — before it was written
   into the methodology. Recompute from data; refute, don't restate.
+
+## 10. Synthetic-world gotchas (from the sibling harness)
+
+- **A synthetic world's "random selection" knob can silently share an exogenous
+  draw with an OBSERVED column — check corr(selection noise, observed columns)
+  before trusting a selection-severity sweep.** In the sibling harness
+  (`closed-loop-default-detection`), the SCM's selection blend reused the
+  exogenous draw behind the observed `prior_underwriter_score` column: corr
+  ≈ 0.92 between the selection score and an observed feature at severity 0, and
+  an in-sample propensity model hit AUC ≈ 1.0 on what was supposed to be
+  selection-at-random. That inverts the severity semantics ("severity 0" is
+  supposed to mean selection *no* propensity model can explain), and the
+  inversion is **unfalsifiable from inside the world** — every downstream
+  metric still computes, the sweep still runs, the numbers just mean the
+  opposite of their labels. Caught by recon *before* implementation; fixed with
+  a gated `independent_selection_noise` flag (default off, a dedicated frozen
+  noise node drawn after all existing draws, so the default RNG stream is
+  sha256-identical and the 51/51 fidelity gate stays green). General check: at
+  severity 0, correlate the selection noise against every observed column and
+  fit a propensity model — you want corr ≈ 0 and AUC ≈ 0.5, not 0.92 and 1.0.

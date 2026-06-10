@@ -112,9 +112,10 @@ flowchart TD
   lifetime PD off the ensemble — *standardization / g-computation in spirit*, with
   non-manipulable identity features (sector, vintage) refused rather than faked. Because
   real data can't validate interventional accuracy, a **fidelity-gated synthetic harness**
-  (the sibling `closed-loop-default-detection` repo) certifies the *direction*:
-  g-computation MAE **0.085** vs naive conditioning **0.109** on the strong-propagation
-  slice.
+  (the sibling `closed-loop-default-detection` repo) certifies the *direction*: on the
+  strong-propagation slice at severity 0.4, g-computation MAE **0.080 ± 0.014** vs naive
+  conditioning **0.099 ± 0.015** across 5 seeds — gap positive on **5/5 seeds**, no sign
+  flips.
 
 ---
 
@@ -127,13 +128,20 @@ model**, hide it the way the real process does, and measure against it
 
 | Real data can't reveal… | because… | synthetic SCM gives |
 |---|---|---|
-| PD calibration on **declined** applicants | no outcomes for declines | true default planted for all, hidden via the approval policy |
+| PD calibration on **declined** applicants | no outcomes for declines | true default planted for all, hidden via the approval policy — now measured on the **same SCM** as the counterfactual rows |
 | **counterfactual** accuracy of `do(x)` | you never see a borrower both ways | structural equations → the *true* interventional PD |
 | accuracy at default rates outside the realized window | only one realized regime | sweep the base rate / selection severity |
 
 This is how Deliverable C's g-computation is certified on ground truth the real data
-cannot provide — and why we report drivers as interventional effects with the propagation
-made explicit, not raw observational correlations.
+cannot provide — **across 5 seeds, no sign flips** at moderate selection (severity 0.4).
+The certification is honest about its boundary: at full selection severity the advantage
+is statistically zero (gap +0.002 ± 0.002, sign flip on one seed) — selection on an
+*unobserved* confounder defeats backdoor adjustment, and we say so rather than claim a
+small win. And the three rows are one experiment, not three: the declined-calibration
+loop now runs on the SCM itself, where IPW holds declined-cohort ECE through severity
+0.4 (0.087, seed 42) and fails at 0.6 — the same operating frontier, in the same synthetic world,
+as the counterfactual result. This is why we report drivers as interventional effects
+with the propagation made explicit, not raw observational correlations.
 
 ---
 
@@ -181,7 +189,7 @@ flowchart LR
 | **S_traj** | 0.25 | 0.203 | 0.422 | **+0.055** | **Real modeling** — WS2 OOT CIF recalibration; cohort-weighted CDR MAE **0.0207 → 0.0150**. |
 | **S_cal** | 0.20 | 0.797 | 0.912 | **+0.023** | **Real modeling** — WS3 split-conformal band; 90% coverage **0.70 → 0.89** at width 0.13. |
 | **S_P&L** | 0.30 | 0.399 | 0.433 | **+0.010** | **Policy / risk choice** — WS1 timing E[NPV]. Headline **+$91,157** ($603,817 vs $512,660 flat) but only +0.010 normalized; approves **59%** vs ~27% — more modeled profit *and* more risk. |
-| **S_C** | 0.10 | 0.201 | 0.213 | **+0.001** | WS4 g-computation, harness-certified (0.085 vs 0.109). Small at its 10% weight. |
+| **S_C** | 0.10 | 0.201 | 0.213 | **+0.001** | WS4 g-computation, harness-certified (0.087 vs 0.109, single-seed scorecard config; 5-seed sweep in §3). Small at its 10% weight. |
 | **Weighted** | | **0.3499** | **0.5591** | **+0.209** | |
 
 **The honest read.** Of the +0.209: **+0.12 is "we produced the deliverables"** (real
@@ -218,7 +226,13 @@ What we'd tell the next team, distilled from `LEARNINGS.md` and `docs/VERIFICATI
 - **`do()` ≠ conditioning, and say so where you can't prove it.** Counterfactuals must
   propagate structural descendants; for the rest, label it observational rather than
   overclaim a full SCM where positivity fails. When the real data can't validate a claim,
-  build a *fidelity-gated synthetic oracle* and certify the **direction** there.
+  build a *fidelity-gated synthetic oracle* and certify the **direction** there — with
+  multi-seed error bars, not one lucky seed (strong-propagation MAE gap **+0.019 ± 0.005,
+  positive on 5/5 seeds** at severity 0.4). The oracle also bounds the regime sharply:
+  inside the frontier (severity ≤ 0.4) IPW holds declined-cohort calibration *and*
+  g-computation reliably improves counterfactual MAE; beyond it, selection on an
+  unobserved confounder defeats both — **one structural mechanism, two measured failure
+  modes**, measured in the same synthetic world.
 - **The validator is the law — and trust nothing's "PASS" until you've run it.** NaN is
   rejected everywhere (declines included); build by LEFT-JOIN onto the shipped
   `expected_ids/*` lists, not the data; B must be the exact 13×13 integer grid, monotone
