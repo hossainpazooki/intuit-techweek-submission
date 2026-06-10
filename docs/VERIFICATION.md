@@ -103,3 +103,83 @@ cannot support.
   then independently re-run and validated (official validator → `RESULT: PASS`,
   0 errors) before commit. See [`METHODOLOGY.md`](../METHODOLOGY.md) §10 for the
   implemented-vs-proposed boundary.
+
+## Round 2 — the synthetic-harness results (2026-06-10)
+
+The sibling repo (`closed-loop-default-detection`, harness master `283a040`)
+hosts the synthetic world built to study the same selective-labels mechanism
+this submission hit on the real data. Its headline numbers were put through the
+same discipline — reproduce first, then try to break it — before being quoted
+anywhere. **None of this touches the real-data findings above.** The positivity
+failure and the IPW-not-identified conclusion are about the hackathon dataset
+and stand unchanged; the harness results are about a synthetic world where the
+selection severity is a knob, not a fact.
+
+### Claim 1 — the g-computation advantage (survived in part, refuted in part)
+
+**What was claimed.** A single-seed result that g-computation beats naive
+conditioning on counterfactual MAE — "gcomp 0.087 vs naive 0.109", from the
+harness's own `scripts/run_scorecard.py` c_proxy config (n_applicants=5500,
+n_query_applicants=200, seed 42, severity 0.4, `--compute high`).
+
+**How it was attacked.** Reproduce, then de-seed. The scorecard figure
+reproduces **bit-for-bit** on current harness master — not wrong, just
+single-seed. The skeptic move was a 5-seed sweep (seeds 7/13/42/101/2026,
+900 Deliverable-C-style queries each) at both severities, looking for sign
+flips.
+
+**What survived.**
+
+- **Severity 0.4, strong-propagation slice: the advantage is real.** G-comp MAE
+  **0.0797 ± 0.0135** vs naive **0.0988 ± 0.0154**; gap **+0.0191 ± 0.0046,
+  positive on 5/5 seeds, no sign flips** — a ~19% relative reduction. The
+  overall (all-query) gap is **+0.0031 ± 0.0025**, much thinner; the win lives
+  where interventions actually propagate.
+- **Seed 42 — the previously published seed — turned out to be the most
+  pessimistic of the five.** The single-seed number *understated* the
+  strong-propagation advantage rather than cherry-picking it.
+- **The full-severity advantage did NOT survive.** At severity 1.0 the
+  strong-propagation gap is **+0.0021 ± 0.0022 with a sign flip on seed 13** —
+  statistically zero. Any claim of even a small full-severity win died here;
+  the docs say "no reliable advantage" and nothing softer.
+- **A disclosed trade-off, not seed noise:** g-comp's bias is *more* negative
+  than naive's on **5/5 seeds** at severity 0.4 (seed 42: −0.0252 vs −0.0201).
+  MAE improves while systematic underestimation worsens slightly.
+
+### Claim 2 — the unified-world frontier (survived)
+
+**What was claimed.** The selective-labels operating frontier (IPW holds
+declined-cohort calibration through severity 0.4, fails at 0.6) had been
+measured in a *different* synthetic world (the flat generator) than the
+counterfactual results (the SCM) — two worlds, one narrative, a refutable gap.
+The fix under test: `SelectiveLabelsLoop` now runs on the SCM itself
+(`generator="scm"`), so both failure modes are measured in the same world.
+
+**How it was verified.** The change had to prove it altered nothing it didn't
+own: the default RNG path is **sha256-verified identical** (same cohorts,
+checked across processes), the flat-generator baseline is **byte-identical**
+(frozen-baseline test with exact float equality), **50/50 tests** pass, and the
+SCM fidelity gate is **51/51 checks green**.
+
+**What survived.** SCM frontier, seed 42: IPW declined-ECE **0.0251 / 0.0370 /
+0.0874** at severity 0 / 0.2 / 0.4 (pass), **0.2498** at 0.6 (fail) → the
+operating frontier lands at **severity 0.4, the same frontier as the flat
+world**, now measured in the same synthetic world as the counterfactual
+results. The unified claim this licenses: inside the frontier (severity ≤ 0.4)
+IPW holds declined-cohort calibration *and* g-computation reliably improves
+counterfactual MAE; beyond it, selection on an *unobserved* confounder defeats
+both — one structural mechanism, two measured failure modes.
+
+### The standout catch — a shared exogenous draw
+
+Recon *before* implementation caught that the SCM's selection blend reused the
+exogenous draw behind the **observed** `prior_underwriter_score` column
+(corr ≈ 0.92 with the selection score at severity 0; an in-sample propensity
+model reached AUC ≈ 1.0 on what was supposed to be selection-at-random). On the
+flat generator, severity 0 means selection-at-random that *no* propensity model
+can explain — so pointing the loop at the SCM naively would have **silently
+inverted the severity semantics** and made the two frontiers incomparable, with
+every downstream number still computing happily. Fixed with a gated
+`independent_selection_noise` flag (default off): a dedicated frozen
+selection-noise node drawn after all existing draws, so the default RNG stream
+is sha256-identical and the fidelity gate stays 51/51 green.

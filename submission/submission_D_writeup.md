@@ -82,14 +82,28 @@ counterfactuals), we built a **fidelity-gated synthetic validation harness**
 (`closed-loop-default-detection`): a structural causal model tuned to match the
 real marginals (fidelity gate green), with a true `do()` oracle. There we grade a
 deployable **g-computation estimator** (fit on approved rows only, no SCM
-coefficients) against **naive conditioning**. On the **strong-propagation** slice
-at moderate selection severity (0.4), g-computation MAE is **0.087 vs naive
-0.109** — a **20% reduction** in interventional error exactly where naive
+coefficients) against **naive conditioning**. Certified across a **5-seed sweep**
+(seeds 7/13/42/101/2026, 900 queries each): on the **strong-propagation** slice at
+moderate selection severity (0.4), g-computation MAE is **0.0797 ± 0.0135 vs naive
+0.0988 ± 0.0154** — gap **+0.0191 ± 0.0046, positive on 5/5 seeds with no sign
+flips**, a **~19% relative reduction** in interventional error exactly where naive
 conditioning is structurally wrong (it ignores that intervening on a parent moves
-its children). This certifies the *direction* of our C methodology on ground truth
-the real data cannot provide. **Regulator defense:** drivers are reported as
-interventional effects with the propagation made explicit and non-intervenable
-identity features (sector, vintage) refused — not raw observational correlations.
+its children).
+
+The harness also measures where this stops working. At **full selection severity
+(1.0)** the strong-propagation gap collapses to **+0.0021 ± 0.0022 and flips sign
+on one seed** — a statistically zero advantage, and we claim none. This is the
+same limit that breaks the IPW selective-labels frontier between severity 0.4 and
+0.6 (§4): estimators fit on approved rows whose conditionals are distorted by
+selection on an *unobserved* confounder. Backdoor adjustment cannot fix unobserved
+confounding; IPW cannot fix broken positivity — **one structural mechanism bounds
+both the observational reweighting fix and the causal estimator**, measured
+independently in the same synthetic world. **Regulator defense:** drivers are
+reported as interventional effects with the propagation made explicit and
+non-intervenable identity features (sector, vintage) refused — not raw
+observational correlations — and the validation states both halves: the direction
+of the method is certified with error bars across seeds, *and* the regime where
+it stops working is measured, not assumed away.
 
 ## 4. Calibration & uncertainty quantification
 
@@ -100,8 +114,8 @@ decisions flip in a narrow band near break-even, so calibration is first-class.
   predictive uncertainty for a binary outcome, and they **under-cover** (binned
   coverage 0.70 at high compute). We use a **split-conformal** half-width: bin by
   predicted PD, take the 0.95-quantile of per-bin `|empirical_rate − predicted|`,
-  fit on the validation funded subset. Conformity is measured on the **raw** point
-  — a *fitted* recalibrator (isotonic) shrinks in-fold error and under-covers
+  fit on the validation funded subset. Conformity is measured on the **raw** point —
+  a *fitted* recalibrator (isotonic) shrinks in-fold error and under-covers
   out-of-fold (we verified raw → 0.875 vs isotonic → 0.53 held-out coverage). Result
   on the holdout (evaluated by repeated 50/50 split-conformal, no circularity):
   **coverage 0.900 at width 0.133** (vs raw 0.70 / 0.079).
@@ -110,8 +124,12 @@ decisions flip in a narrow band near break-even, so calibration is first-class.
   unscoreable queries so the file is never null.
 
 **Declined-subpopulation coverage** is the part real data can never check; the
-harness re-confirms (via the SCM truth) that calibrated bands degrade as selection
-severity rises — the honest operating frontier.
+harness measures it against SCM truth — and the selective-labels loop now runs
+**on the SCM itself**, the same synthetic world as the §3 counterfactual results.
+IPW holds declined-cohort ECE at **0.025 / 0.037 / 0.087** for severity
+0 / 0.2 / 0.4 (pass, seed 42), then fails at 0.6 (**0.250**) — an honest operating
+frontier at severity 0.4, the same boundary where the g-computation advantage
+collapses (§3), measured in one world rather than two.
 
 ## 5. Limitations & what we'd do differently
 
@@ -122,8 +140,12 @@ severity rises — the honest operating frontier.
   total loss (no term draws) on strong empirical grounds (recovery ≈0.0001), but a
   different draw-accounting convention would move the P&L level.
 - **C is g-computation-in-spirit, not a fitted SCM on real data** — positivity
-  failure makes a full real-data SCM unidentified; the harness certifies direction,
-  not the exact real-data magnitudes.
+  failure makes a full real-data SCM unidentified. The harness certifies direction
+  across 5 seeds **only inside the severity ≤ 0.4 frontier**; at full selection
+  severity the advantage is statistically zero (sign flip on one seed), and the
+  MAE gain trades a small but consistent increase in negative bias (g-comp bias
+  more negative than naive on 5/5 seeds) — measured limits, not the exact
+  real-data magnitudes.
 - **With another day:** fold the conformal recalibration into the *decision* (not
   just reported PD) to close the gap to the $694K ranking optimum; per-cohort (not
   global) OOT recalibration for B; bootstrap bands for C scaled by compute.
