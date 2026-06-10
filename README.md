@@ -263,6 +263,12 @@ python scripts/make_writeup_pdf.py                    # submission/submission_D_
 deterministic per `(seed, budget)`. The harness for C lives in the sibling
 `closed-loop-default-detection` repo; `run_scorecard.py` locates it automatically.
 
+Determinism is per `(seed, budget, sklearn version)`: HistGradientBoosting output
+shifts at the third decimal across sklearn releases (verified 1.8.0 vs 1.9.0), which
+is why `requirements-dev.txt` pins `scikit-learn==1.8.0` — the version the committed
+artifacts were built with. Re-running under a different release reproduces every
+conclusion but not every digit.
+
 ## 8. Submit (official hard requirements)
 
 1. **Register** your team on the challenge's Google Form — the private upload link is

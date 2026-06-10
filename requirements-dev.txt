@@ -3,5 +3,8 @@
 # design (Python 3.14 lacks wheels for lightgbm/econml/etc.); see METHODOLOGY.md.
 -r requirements.txt
 
-scikit-learn>=1.5      # HistGradientBoosting hazard/PD model + isotonic calibration
+# Pinned EXACTLY: HistGradientBoosting output shifts at the third decimal across
+# sklearn releases (verified 1.8.0 vs 1.9.0), so the committed artifacts (scorecard,
+# submission CSVs) only reproduce byte-identically under this version.
+scikit-learn==1.8.0    # HistGradientBoosting hazard/PD model + isotonic calibration
 matplotlib>=3.8        # EDA / calibration plots (optional)
