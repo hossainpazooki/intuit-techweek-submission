@@ -118,15 +118,20 @@ selection severity is a knob, not a fact.
 ### Claim 1 — the g-computation advantage (survived in part, refuted in part)
 
 **What was claimed.** A single-seed result that g-computation beats naive
-conditioning on counterfactual MAE — "gcomp 0.087 vs naive 0.109", from the
-harness's own `scripts/run_scorecard.py` c_proxy config (n_applicants=5500,
+conditioning on counterfactual MAE, from the harness's own
+`scripts/run_scorecard.py` c_proxy config (n_applicants=5500,
 n_query_applicants=200, seed 42, severity 0.4, `--compute high`).
 
 **How it was attacked.** Reproduce, then de-seed. The scorecard figure
-reproduces **bit-for-bit** on current harness master — not wrong, just
-single-seed. The skeptic move was a 5-seed sweep (seeds 7/13/42/101/2026,
-900 Deliverable-C-style queries each) at both severities, looking for sign
-flips.
+reproduces bit-for-bit on current harness master **per environment, and the
+environment matters at the third decimal**: this repo's Python (sklearn 1.8.0,
+which built the committed `reports/scorecard.json`) yields gcomp 0.0854 vs
+naive 0.1085; the harness venv (sklearn 1.9.0) yields 0.0869 vs 0.1087 for the
+identical call — HistGradientBoosting differs across sklearn releases. Neither
+is wrong; both are single-seed and environment-pinned, which is exactly why no
+load-bearing claim rests on this figure. The skeptic move was a 5-seed sweep
+(seeds 7/13/42/101/2026, 900 Deliverable-C-style queries each) at both
+severities, looking for sign flips.
 
 **What survived.**
 

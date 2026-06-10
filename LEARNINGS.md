@@ -164,6 +164,16 @@ while building it. Every empirical number here was recomputed from the data
   (no local fallback), Claude **commits and pushes to the private `origin` itself** at
   every checkpoint, then confirms `0 ahead / 0 behind`. Unpushed commits at end of
   session = lost work. Don't carry over the sibling repos' hands-off git rule.
+- **"Reproducible" is a three-part claim: (seed, budget, sklearn version).**
+  HistGradientBoosting output shifts at the third decimal across sklearn releases —
+  the identical c_proxy call gave gcomp 0.0854/naive 0.1085 under sklearn 1.8.0
+  (this repo's Python, which built the committed artifacts) and 0.0869/0.1087 under
+  1.9.0 (the harness venv). Two agents both honestly claimed "bit-for-bit
+  reproduction" of *different* numbers because each reproduced in its own
+  environment. Consequences: `requirements-dev.txt` pins `scikit-learn==1.8.0`;
+  any quoted figure's provenance must name the environment, not just the config;
+  and a "doesn't reproduce" finding means *check the environment first*, not
+  "the artifact is stale."
 
 ## 9. Multi-agent / workflow learnings
 
@@ -198,3 +208,12 @@ while building it. Every empirical number here was recomputed from the data
   sha256-identical and the 51/51 fidelity gate stays green). General check: at
   severity 0, correlate the selection noise against every observed column and
   fit a propensity model — you want corr ≈ 0 and AUC ≈ 0.5, not 0.92 and 1.0.
+- **Known + deliberately not fixed before the freeze:** the harness's
+  `requested_amount_to_observed_revenue` is derived from *ungated* bank-feed
+  revenue, so no-feed rows carry information that structural missingness says
+  they shouldn't have (`scm.py:666-673`). Disclosed in the harness `FABLE.md`.
+  Decision: fixing it alters the SCM, which invalidates every verified number
+  (5-seed sweep, unified frontier, 51-check fidelity gate) and forces a full
+  re-verification cycle — disproportionate for a realism nuance in the
+  *validation* world that does not touch the real-data deliverables. Fix it
+  first thing if the harness outlives the hackathon.

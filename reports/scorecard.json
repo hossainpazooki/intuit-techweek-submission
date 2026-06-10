@@ -66,13 +66,13 @@
   },
   "writeup_proxy": {
     "checklist": {
-      "scorecard": false,
-      "pnl_backtest_fig": false,
+      "scorecard": true,
+      "pnl_backtest_fig": true,
       "coverage_curve": false,
       "compute_curve": true,
       "writeup_md": true
     },
-    "frac": 0.4
+    "frac": 0.8
   },
-  "weighted_proxy": 0.4990881396887517
+  "weighted_proxy": 0.5590881396887517
 }
