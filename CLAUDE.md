@@ -58,40 +58,20 @@ default — **ignore that prefix and the ASCII-print rule**; plain `python` is c
 
 ## How I want you to work
 
-### Use the Workflow feature for substantial work
-I opt into multi-agent orchestration explicitly (I'll say "use workflows" / "spin up
-a team", or you'll see ultracode). When I do:
-- **Fan out** independent work as parallel agents, each owning **disjoint files**
-  against **one shared interface contract** embedded in the prompt (this is how the
-  modules here were built — it prevents interface drift).
-- Use `pipeline()` by default; reserve a `parallel()` barrier for when a stage truly
-  needs all prior results (e.g. dedup before verify).
-- Give each agent a **structured output schema** so results are machine-usable.
-- End multi-file builds with a **single integration agent** that runs the pipeline
-  and **iterates until the official validator prints `RESULT: PASS`**.
-- Do **not** trust a workflow's self-reported success — see verification below.
+My global rules cover the general posture — multi-agent workflow discipline
+(`~/.claude/rules/workflows.md`), adversarial verification, and the
+`[VALIDATED]/[BASELINE]/[STRETCH]/[FUTURE]` honesty tagging
+(`~/.claude/rules/verification-and-honesty.md`). They apply here in full. The
+repo-specific bindings of those rules:
 
-### Adversarial testing before claiming or writing
-This is a standing preference, not a one-off. Before I write a claim into a doc or
-trust a result:
-- **Recompute every empirical number from the raw CSVs** (don't restate from memory).
-- **Try to refute** each technical claim with an independent skeptic; a claim is
-  "correct" only if it survives. For verification workflows use the
-  fan-out → refute → synthesize shape (see `docs/VERIFICATION.md` for the template).
-- **Independently re-run** the load-bearing claims yourself (Bash) rather than relying
-  on a subagent's word. The official validator is the final gate — run it, don't
-  assume it.
-- Default to skepticism over agreement; surface disagreements explicitly.
-
-### Honesty (non-negotiable)
-- Keep the **implemented-vs-proposed** boundary visible everywhere. Tag methods
-  `[VALIDATED] / [BASELINE] / [STRETCH] / [FUTURE]`. Never present aspirational work as
-  built. Use "we validate / we use as baseline / we propose / future extension".
-- When the data contradicts a stated assumption (e.g. positivity), say so and adjust —
-  don't paper over it. Partial identification / abstention beats a confident wrong
-  number.
-- If you change repo state in a way that makes a doc stale, update the doc in the same
-  change.
+- The **official validator is the final gate.** The integration agent that closes
+  a multi-file build must iterate until it prints **`RESULT: PASS`** — see the
+  `integration-runner` agent.
+- Recompute every empirical number **from the raw CSVs**; refute each claim with
+  the `skeptic-verifier` before it's written down. The fan-out → refute →
+  synthesize template lives in `docs/VERIFICATION.md`.
+- When data contradicts a stated assumption (e.g. positivity fails), say so and
+  adjust. Partial identification / abstention beats a confident wrong number.
 
 ### Submission integrity (the validator is law)
 - A/B/C are assembled by **LEFT-JOIN onto `expected_ids/*.txt`**; every prob column
@@ -109,8 +89,7 @@ trust a result:
   commits, that work is effectively lost to me. (This is the *opposite* of my other
   repos' "output the command, don't run it" policy — here, you run it.)
 - Commit/push when I ask or at a natural checkpoint; branch off `master` for anything
-  risky. End commit messages with:
-  `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`
+  risky.
 - The unzipped `dataset/*.csv` are gitignored (reproducible from the committed zip);
   don't commit them. `submission/*.csv` ARE committed (versioned deliverables).
 

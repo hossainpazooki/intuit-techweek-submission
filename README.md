@@ -189,7 +189,7 @@ flowchart LR
 | **S_traj** | 0.25 | 0.203 | 0.422 | **+0.055** | **Real modeling** — WS2 OOT CIF recalibration; cohort-weighted CDR MAE **0.0207 → 0.0150**. |
 | **S_cal** | 0.20 | 0.797 | 0.912 | **+0.023** | **Real modeling** — WS3 split-conformal band; 90% coverage **0.70 → 0.89** at width 0.13. |
 | **S_P&L** | 0.30 | 0.399 | 0.433 | **+0.010** | **Policy / risk choice** — WS1 timing E[NPV]. Headline **+$91,157** ($603,817 vs $512,660 flat) but only +0.010 normalized; approves **59%** vs ~27% — more modeled profit *and* more risk. |
-| **S_C** | 0.10 | 0.201 | 0.213 | **+0.001** | WS4 g-computation, harness-certified (0.087 vs 0.109, single-seed scorecard config; 5-seed sweep in §3). Small at its 10% weight. |
+| **S_C** | 0.10 | 0.201 | 0.213 | **+0.001** | WS4 g-computation, harness-certified (0.085 vs 0.108 per the committed scorecard, single-seed + environment-pinned; the load-bearing 5-seed sweep is in §3). Small at its 10% weight. |
 | **Weighted** | | **0.3499** | **0.5591** | **+0.209** | |
 
 **The honest read.** Of the +0.209: **+0.12 is "we produced the deliverables"** (real
