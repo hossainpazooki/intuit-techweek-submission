@@ -135,11 +135,11 @@ model**, hide it the way the real process does, and measure against it
 This is how Deliverable C's g-computation is certified on ground truth the real data
 cannot provide — **across 5 seeds, no sign flips** at moderate selection (severity 0.4).
 The certification is honest about its boundary: at full selection severity the advantage
-is statistically zero (gap +0.002 ± 0.002, sign flip on one seed) — selection on an
+collapses by nearly an order of magnitude (gap +0.0017 ± 0.0013, negligible) — selection on an
 *unobserved* confounder defeats backdoor adjustment, and we say so rather than claim a
-small win. And the three rows are one experiment, not three: the declined-calibration
+deployable win. And the three rows are one experiment, not three: the declined-calibration
 loop now runs on the SCM itself, where IPW holds declined-cohort ECE through severity
-0.4 (0.087, seed 42) and fails at 0.6 — the same operating frontier, in the same synthetic world,
+0.4 (0.097, seed 42) and fails at 0.6 — the same operating frontier, in the same synthetic world,
 as the counterfactual result. This is why we report drivers as interventional effects
 with the propagation made explicit, not raw observational correlations.
 

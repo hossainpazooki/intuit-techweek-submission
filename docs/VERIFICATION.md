@@ -133,22 +133,24 @@ load-bearing claim rests on this figure. The skeptic move was a 5-seed sweep
 (seeds 7/13/42/101/2026, 900 Deliverable-C-style queries each) at both
 severities, looking for sign flips.
 
-**What survived.**
+**What survived** (numbers below are the corrected certification after the
+bank-feed leak fix of 2026-06-11 — see Round 3 — re-run on the gated SCM).
 
 - **Severity 0.4, strong-propagation slice: the advantage is real.** G-comp MAE
-  **0.0797 ± 0.0135** vs naive **0.0988 ± 0.0154**; gap **+0.0191 ± 0.0046,
-  positive on 5/5 seeds, no sign flips** — a ~19% relative reduction. The
-  overall (all-query) gap is **+0.0031 ± 0.0025**, much thinner; the win lives
+  **0.0856 ± 0.0138** vs naive **0.0989 ± 0.0182**; gap **+0.0133 ± 0.0068,
+  positive on 5/5 seeds, no sign flips** — a ~13% relative reduction. The
+  overall (all-query) gap is **+0.0019 ± 0.0021**, much thinner; the win lives
   where interventions actually propagate.
-- **Seed 42 — the previously published seed — turned out to be the most
-  pessimistic of the five.** The single-seed number *understated* the
-  strong-propagation advantage rather than cherry-picking it.
+- **Seed 42 — the previously published seed — sits in the lower half of the
+  five** (2nd-smallest strong-propagation gap, +0.0079). The single-seed number
+  was representative of the spread, not a cherry-picked best case.
 - **The full-severity advantage did NOT survive.** At severity 1.0 the
-  strong-propagation gap is **+0.0021 ± 0.0022 with a sign flip on seed 13** —
-  statistically zero. Any claim of even a small full-severity win died here;
+  strong-propagation gap collapses by nearly an order of magnitude to
+  **+0.0017 ± 0.0013** — uniformly positive across seeds but negligible, with no
+  deployable value. Any claim of even a small full-severity win died here;
   the docs say "no reliable advantage" and nothing softer.
 - **A disclosed trade-off, not seed noise:** g-comp's bias is *more* negative
-  than naive's on **5/5 seeds** at severity 0.4 (seed 42: −0.0252 vs −0.0201).
+  than naive's on **5/5 seeds** at severity 0.4 (seed 42: −0.0233 vs −0.0219).
   MAE improves while systematic underestimation worsens slightly.
 
 ### Claim 2 — the unified-world frontier (survived)
@@ -166,8 +168,9 @@ checked across processes), the flat-generator baseline is **byte-identical**
 (frozen-baseline test with exact float equality), **50/50 tests** pass, and the
 SCM fidelity gate is **51/51 checks green**.
 
-**What survived.** SCM frontier, seed 42: IPW declined-ECE **0.0251 / 0.0370 /
-0.0874** at severity 0 / 0.2 / 0.4 (pass), **0.2498** at 0.6 (fail) → the
+**What survived** (corrected post-leak-fix, 2026-06-11 — see Round 3). SCM
+frontier, seed 42: IPW declined-ECE **0.0359 / 0.0378 / 0.0969** at severity
+0 / 0.2 / 0.4 (pass), **0.2439** at 0.6 (fail) → the
 operating frontier lands at **severity 0.4, the same frontier as the flat
 world**, now measured in the same synthetic world as the counterfactual
 results. The unified claim this licenses: inside the frontier (severity ≤ 0.4)
@@ -188,3 +191,38 @@ every downstream number still computing happily. Fixed with a gated
 `independent_selection_noise` flag (default off): a dedicated frozen
 selection-noise node drawn after all existing draws, so the default RNG stream
 is sha256-identical and the fidelity gate stays 51/51 green.
+
+## Round 3 — bank-feed information leak found and fixed (2026-06-11)
+
+**The defect.** `requested_amount_to_observed_revenue` was derived at draw time
+from the *ungated* bank-feed revenue node and was **not** in the gated bank-feed
+block, so no-feed applicants (`has_linked_bank_feed=False`) carried revenue
+information the structural-missingness design says they cannot have. The leak fed
+both estimators and inflated the very strong-propagation slice the §3 headline
+rests on.
+
+**How it was caught and sized.** A single-seed diagnostic (seed 42, severity
+0.4) on the leaky vs gated SCM: the strong-propagation gap dropped
+**+0.0135 → +0.0079 (−42%)** while the fidelity gate stayed green (there is no
+fidelity check on the ratio) and the FLAT byte-identity test stayed intact (the
+change is contained to the SCM). Precision-on-a-biased-estimate was the risk: had
+we scaled the sweep first, we would have tightened error bars around a
+leak-inflated number.
+
+**The fix (design a).** Gate the ratio to NaN for no-feed rows alongside the
+bank-feed block, in both the SCM emit path (`scm._assemble_features`) and the
+estimator's feed-OFF switch (`counterfactual._effect_feed_switch`); turning a feed
+ON already re-imputes it via the observed-revenue child mechanism. True risk is
+unaffected (it reads the ungated `st.values`). One frozen test expectation moved
+by design (seed-42 strong gap threshold 0.008 → 0.005); 50/50 tests green;
+fidelity 51/51 green.
+
+**Corrected certification (5-seed sweep, gated SCM).** Severity 0.4 strong-prop
+gap **+0.0191 ± 0.0046 → +0.0133 ± 0.0068** (still 5/5 positive, no sign flips;
+~19% → ~13% relative). Severity 1.0 **+0.0021 ± 0.0022 → +0.0017 ± 0.0013** — now
+uniformly positive (the old seed-13 sign flip is gone) but collapsed by nearly an
+order of magnitude, so the "no deployable advantage at full severity" conclusion
+holds via effect-size collapse rather than a sign flip. The SCM IPW frontier moved
+slightly (declined-ECE 0.036 / 0.038 / 0.097, fail 0.244 at 0.6) but the operating
+frontier is **still exactly 0.4**. The Claim 1 / Claim 2 numbers above are these
+corrected post-fix values.

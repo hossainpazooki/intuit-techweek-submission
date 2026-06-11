@@ -84,17 +84,17 @@ real marginals (fidelity gate green), with a true `do()` oracle. There we grade 
 deployable **g-computation estimator** (fit on approved rows only, no SCM
 coefficients) against **naive conditioning**. Certified across a **5-seed sweep**
 (seeds 7/13/42/101/2026, 900 queries each): on the **strong-propagation** slice at
-moderate selection severity (0.4), g-computation MAE is **0.0797 ± 0.0135 vs naive
-0.0988 ± 0.0154** — gap **+0.0191 ± 0.0046, positive on 5/5 seeds with no sign
-flips**, a **~19% relative reduction** in interventional error exactly where naive
+moderate selection severity (0.4), g-computation MAE is **0.0856 ± 0.0138 vs naive
+0.0989 ± 0.0182** — gap **+0.0133 ± 0.0068, positive on 5/5 seeds with no sign
+flips**, a **~13% relative reduction** in interventional error exactly where naive
 conditioning is structurally wrong (it ignores that intervening on a parent moves
 its children).
 
 The harness also measures where this stops working. At **full selection severity
-(1.0)** the strong-propagation gap collapses to **+0.0021 ± 0.0022 and flips sign
-on one seed** — a statistically zero advantage, and we claim none. This is the
-same limit that breaks the IPW selective-labels frontier between severity 0.4 and
-0.6 (§4): estimators fit on approved rows whose conditionals are distorted by
+(1.0)** the strong-propagation gap collapses by nearly an order of magnitude to
+**+0.0017 ± 0.0013** — negligible and of no deployable value, and we claim none.
+This is the same limit that breaks the IPW selective-labels frontier between
+severity 0.4 and 0.6 (§4): estimators fit on approved rows whose conditionals are distorted by
 selection on an *unobserved* confounder. Backdoor adjustment cannot fix unobserved
 confounding; IPW cannot fix broken positivity — **one structural mechanism bounds
 both the observational reweighting fix and the causal estimator**, measured
@@ -112,13 +112,13 @@ decisions flip in a narrow band near break-even, so calibration is first-class.
 
 - **A (PD).** Raw ensemble percentile bands measure model *disagreement*, not
   predictive uncertainty for a binary outcome, and they **under-cover** (binned
-  coverage 0.70 at high compute). We use a **split-conformal** half-width: bin by
+  coverage 0.80 at high compute). We use a **split-conformal** half-width: bin by
   predicted PD, take the 0.95-quantile of per-bin `|empirical_rate − predicted|`,
   fit on the validation funded subset. Conformity is measured on the **raw** point —
   a *fitted* recalibrator (isotonic) shrinks in-fold error and under-covers
   out-of-fold (we verified raw → 0.875 vs isotonic → 0.53 held-out coverage). Result
   on the holdout (evaluated by repeated 50/50 split-conformal, no circularity):
-  **coverage 0.900 at width 0.133** (vs raw 0.70 / 0.079).
+  **coverage 0.89 at width 0.134** (vs raw 0.80 / 0.082).
 - **B (CDR).** Ensemble percentile bands across members, monotone per cohort.
 - **C (PD_cf).** Ensemble percentile bands across members; population fallback for
   unscoreable queries so the file is never null.
@@ -126,8 +126,8 @@ decisions flip in a narrow band near break-even, so calibration is first-class.
 **Declined-subpopulation coverage** is the part real data can never check; the
 harness measures it against SCM truth — and the selective-labels loop now runs
 **on the SCM itself**, the same synthetic world as the §3 counterfactual results.
-IPW holds declined-cohort ECE at **0.025 / 0.037 / 0.087** for severity
-0 / 0.2 / 0.4 (pass, seed 42), then fails at 0.6 (**0.250**) — an honest operating
+IPW holds declined-cohort ECE at **0.036 / 0.038 / 0.097** for severity
+0 / 0.2 / 0.4 (pass, seed 42), then fails at 0.6 (**0.244**) — an honest operating
 frontier at severity 0.4, the same boundary where the g-computation advantage
 collapses (§3), measured in one world rather than two.
 
@@ -142,10 +142,10 @@ collapses (§3), measured in one world rather than two.
 - **C is g-computation-in-spirit, not a fitted SCM on real data** — positivity
   failure makes a full real-data SCM unidentified. The harness certifies direction
   across 5 seeds **only inside the severity ≤ 0.4 frontier**; at full selection
-  severity the advantage is statistically zero (sign flip on one seed), and the
-  MAE gain trades a small but consistent increase in negative bias (g-comp bias
-  more negative than naive on 5/5 seeds) — measured limits, not the exact
-  real-data magnitudes.
+  severity the advantage collapses by nearly an order of magnitude (to a negligible
+  +0.0017 ± 0.0013), and the MAE gain trades a small but consistent increase in
+  negative bias (g-comp bias more negative than naive on 5/5 seeds) — measured
+  limits, not the exact real-data magnitudes.
 - **Two "obvious next steps" are tested negatives, not future work.**
   (a) *Conformal-into-the-decision:* re-pricing E[NPV] at the conformal upper PD
   bound (`scripts/exp_conformal_decision.py`; out-of-fold, half-width fit on one

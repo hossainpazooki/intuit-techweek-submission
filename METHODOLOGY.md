@@ -247,8 +247,8 @@ point effect as if it were a solved causal quantity. The `closed-loop-default-
 detection` harness now demonstrates this exact limit empirically in its synthetic
 world: at full selection severity, backdoor adjustment cannot repair selection on an
 *unobserved* confounder — g-computation's advantage over naive conditioning collapses
-to statistically zero (§9, WS4) — which is independent of, and does not soften, the
-real-data positivity caveat above.
+by nearly an order of magnitude to a negligible level (§9, WS4) — which is independent
+of, and does not soften, the real-data positivity caveat above.
 
 **Regulatory defense.** For each stated driver we would argue sign, magnitude, and
 mechanism, and explicitly flag proxies — emphasizing that the model's drivers are
@@ -471,16 +471,16 @@ subset, 2,551 loans, as held-out eval). The TRUE score is not locally computable
   funded → weighted CDR MAE 0.0207 → 0.0150.
 - **WS3 — A 90% PD band is now split-conformal** (`calibration.fit_pd_band`),
   conformity measured on the RAW point (a fitted recalibrator under-covers OOF:
-  raw→0.875 vs isotonic→0.53). Binned coverage 0.70 → **0.900** at width 0.133.
+  raw→0.875 vs isotonic→0.53). Binned coverage 0.80 → **0.89** at width 0.134.
 - **WS4 — C is g-computation-in-spirit**; the `closed-loop-default-detection`
   harness certifies it beats naive conditioning on the strong-propagation slice
   across a 5-seed counterfactual sweep (seeds 7/13/42/101/2026, 900 queries each):
-  at severity 0.4, MAE **0.0797 ± 0.0135** vs naive **0.0988 ± 0.0154** — gap
-  +0.0191 ± 0.0046, positive on **5/5 seeds, no sign flips** (~19% relative).
-  The advantage has a regime boundary: at full severity the gap is +0.0021 ±
-  0.0022 with a sign flip on one seed — statistically zero, so we claim nothing
+  at severity 0.4, MAE **0.0856 ± 0.0138** vs naive **0.0989 ± 0.0182** — gap
+  +0.0133 ± 0.0068, positive on **5/5 seeds, no sign flips** (~13% relative).
+  The advantage has a regime boundary: at full severity the gap collapses by nearly
+  an order of magnitude to +0.0017 ± 0.0013 — negligible, so we claim nothing
   there. One disclosed trade-off: g-computation's bias is consistently *more*
-  negative than naive's (5/5 seeds; e.g. −0.0252 vs −0.0201) — it buys MAE at the
+  negative than naive's (5/5 seeds; e.g. −0.0233 vs −0.0219) — it buys MAE at the
   cost of slightly worse systematic underestimation.
 - **WS5 — Deliverable D** is `submission/submission_D_writeup.md`, auto-filled from
   the artifacts (scorecard, `pnl_backtest.png`, `compute_curve.png`).
