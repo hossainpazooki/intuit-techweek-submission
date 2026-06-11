@@ -5,6 +5,51 @@ Underwriting Challenge**: score small-business loan applicants for probability o
 default, decide who to fund, project default trajectories, and answer causal "what-if"
 queries — from data where the outcomes you most need are **systematically missing**.
 
+> **Two repos, one effort.** This is the **submission** repo (the deliverables + the
+> real-data pipeline). Its sibling — **[`closed-loop-default-detection`](https://github.com/hossainpazooki/closed-loop-default-detection)** —
+> is a *fidelity-gated synthetic SCM*: the causal proving ground that plants a known
+> `do()` ground truth the selective-labels data structurally cannot provide, and
+> certifies Deliverable C against it (§3–§4). Read them together.
+
+### How this was built — the agentic architecture
+
+The deliverables were not hand-built in one pass; they were produced by a **multi-agent
+loop** under a single human-owned interface contract — *fan out → refute → synthesize*,
+with the **official validator** and the harness **fidelity gate** as the only authorities
+(never self-certified). Findings only get written down after a skeptic agent has tried,
+and failed, to refute them.
+
+```mermaid
+flowchart TB
+  H(["Human — owns the interface contract,<br/>the freeze, and git history"])
+  O{{"Orchestrator (Claude Code)<br/>plan · fan out · synthesize"}}
+  H <--> O
+  O ==>|"fan out — disjoint files,<br/>one shared contract"| BUILD
+  subgraph BUILD["parallel build / experiment agents"]
+    direction LR
+    bA["A · policy E&#91;NPV&#93;"]
+    bB["B · trajectory"]
+    bC["C · do() / g-comp"]
+    bD["D · writeup"]
+  end
+  BUILD ==> SYN["synthesize"]
+  SYN ==> VER{"adversarial verify<br/>skeptic agents try to refute,<br/>recompute from raw"}
+  VER -->|"refuted → iterate"| O
+  VER ==>|"survives"| GATES
+  subgraph GATES["gates — the law, never self-certified"]
+    direction LR
+    g1["official validator<br/>RESULT: PASS"]
+    g2["fidelity gate 51/51<br/>+ 50/50 tests"]
+  end
+  GATES ==> SHIP(["frozen, validator-clean<br/>deliverables A / B / C / D"])
+  HARNESS[("closed-loop-default-detection<br/>fidelity-gated synthetic SCM —<br/>the do() oracle real data cannot be")]
+  HARNESS -.->|"certifies"| bC
+  HARNESS -.->|"fidelity gate"| g2
+```
+
+This is the *development* architecture (how the work was made); the *modeling* spine —
+one hazard, four deliverables — is in §3.
+
 This is the single source of truth for the repo. The deeper material lives in
 [`METHODOLOGY.md`](METHODOLOGY.md) (methodology of record), [`LEARNINGS.md`](LEARNINGS.md)
 (gotchas), and the graded writeup
@@ -12,7 +57,8 @@ This is the single source of truth for the repo. The deeper material lives in
 guide is [`dataset/README.md`](dataset/README.md) (upstream Intuit material).
 
 > **Status:** all four deliverables build end-to-end and pass the official validator
-> (`RESULT: PASS`, 0 errors / 0 warnings). Proxy scorecard **0.5591** (see §5).
+> (`RESULT: PASS`, 0 errors / 0 warnings). Proxy scorecard **0.5502** (corrected after a
+> harness leak fix; see §5).
 
 ---
 
@@ -92,7 +138,7 @@ flowchart TD
   C --> sub
   sub --> val{"validate_submission.py"}
   val -->|"PASS · 0 errors / 0 warnings"| ship["ready to upload"]
-  ens -. measured on OOT funded holdout .-> sc["run_scorecard.py (WS5)<br/>weighted proxy 0.5591"]
+  ens -. measured on OOT funded holdout .-> sc["run_scorecard.py (WS5)<br/>weighted proxy 0.5502"]
 ```
 
 - **A — timing-integrated E[NPV] (WS1) + split-conformal band (WS3).** Approve iff the
@@ -113,9 +159,9 @@ flowchart TD
   non-manipulable identity features (sector, vintage) refused rather than faked. Because
   real data can't validate interventional accuracy, a **fidelity-gated synthetic harness**
   (the sibling `closed-loop-default-detection` repo) certifies the *direction*: on the
-  strong-propagation slice at severity 0.4, g-computation MAE **0.080 ± 0.014** vs naive
-  conditioning **0.099 ± 0.015** across 5 seeds — gap positive on **5/5 seeds**, no sign
-  flips.
+  strong-propagation slice at severity 0.4, g-computation MAE **0.086 ± 0.014** vs naive
+  conditioning **0.099 ± 0.018** across 5 seeds — gap **+0.013 ± 0.007, positive on 5/5
+  seeds**, no sign flips.
 
 ---
 
@@ -147,6 +193,14 @@ with the propagation made explicit, not raw observational correlations.
 
 ## 5. Results — and how they improved
 
+> **Correction (post-freeze harness leak fix).** The Deliverable-C proxy is *harness-only*
+> — it reads the synthetic g-computation result, independent of the submission model. A
+> bank-feed information leak in that harness was found and fixed (see
+> [`docs/VERIFICATION.md`](docs/VERIFICATION.md), Round 3): the fix corrected the C term
+> **0.213 → 0.124** and the headline total **0.5591 → 0.5502**, leaving the other four
+> terms byte-identical. The attribution below is the **as-built** snapshot; the corrected
+> current headline is **0.5502**.
+
 The headline is a **proxy**, not the official score (the true score uses hidden test
 labels + hidden per-term normalization). We measure where ground truth exists — fit on
 train funded+matured loans, evaluate on the **out-of-time validation funded** holdout
@@ -176,12 +230,13 @@ flowchart LR
     w4["WS4 g-computation (harness)"]
     w5["WS5 scorecard + figures"]
   end
-  merged["shipped merge<br/>proxy 0.5591 · validator PASS (0/0)"]
+  merged["shipped merge<br/>as-built 0.5591 → corrected 0.5502<br/>validator PASS (0/0)"]
   base --> MoR --> merged
   base --> WS --> merged
 ```
 
-**Step-0 baseline → shipped (compute=high): weighted proxy `0.3499 → 0.5591` (+0.209).**
+**Step-0 baseline → shipped (compute=high): weighted proxy `0.3499 → 0.5591` (+0.209)** —
+*as-built; the C-proxy correction above brings the current shipped total to **0.5502**.*
 
 | Term | Weight | Baseline | Shipped | Δ·w | What changed — and what *kind* of change |
 |---|---|---|---|---|---|
@@ -189,7 +244,7 @@ flowchart LR
 | **S_traj** | 0.25 | 0.203 | 0.422 | **+0.055** | **Real modeling** — WS2 OOT CIF recalibration; cohort-weighted CDR MAE **0.0207 → 0.0150**. |
 | **S_cal** | 0.20 | 0.797 | 0.912 | **+0.023** | **Real modeling** — WS3 split-conformal band; 90% coverage **0.70 → 0.89** at width 0.13. |
 | **S_P&L** | 0.30 | 0.399 | 0.433 | **+0.010** | **Policy / risk choice** — WS1 timing E[NPV]. Headline **+$91,157** ($603,817 vs $512,660 flat) but only +0.010 normalized; approves **59%** vs ~27% — more modeled profit *and* more risk. |
-| **S_C** | 0.10 | 0.201 | 0.213 | **+0.001** | WS4 g-computation, harness-certified (0.085 vs 0.108 per the committed scorecard, single-seed + environment-pinned; the load-bearing 5-seed sweep is in §3). Small at its 10% weight. |
+| **S_C** | 0.10 | 0.201 | 0.213* | **+0.001** | WS4 g-computation, harness-certified. *as-built; the leak fix corrects shipped to **0.124** (committed scorecard now 0.092 vs 0.105), so C is now ~flat vs baseline — a harness-only, model-independent proxy. The load-bearing 5-seed sweep is in §3. Small at its 10% weight. |
 | **Weighted** | | **0.3499** | **0.5591** | **+0.209** | |
 
 **The honest read.** Of the +0.209: **+0.12 is "we produced the deliverables"** (real
@@ -227,7 +282,7 @@ What we'd tell the next team, distilled from `LEARNINGS.md` and `docs/VERIFICATI
   propagate structural descendants; for the rest, label it observational rather than
   overclaim a full SCM where positivity fails. When the real data can't validate a claim,
   build a *fidelity-gated synthetic oracle* and certify the **direction** there — with
-  multi-seed error bars, not one lucky seed (strong-propagation MAE gap **+0.019 ± 0.005,
+  multi-seed error bars, not one lucky seed (strong-propagation MAE gap **+0.013 ± 0.007,
   positive on 5/5 seeds** at severity 0.4). The oracle also bounds the regime sharply:
   inside the frontier (severity ≤ 0.4) IPW holds declined-cohort calibration *and*
   g-computation reliably improves counterfactual MAE; beyond it, selection on an
