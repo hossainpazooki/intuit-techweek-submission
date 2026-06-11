@@ -96,6 +96,23 @@ N_BAG_SEEDS = 5         # number of bagged hazard-model seeds in the ensemble
 # smoothness/extrapolation assumption, not identification.
 APPLY_OOT_CALIBRATION = True
 
+# Deliverable B CIF recalibration mode (WS2):
+#   "global"     -- single lifetime ratio fit on the validation funded subset
+#   "per_cohort" -- 13 per-cohort ratios with empirical-Bayes shrinkage toward
+#                   the global factor (survival.shrunk_cohort_ratios). The
+#                   shrinkage is the overfitting guard: ~200 loans/cohort means
+#                   raw per-cohort ratios are mostly binomial noise; tau^2 = 0
+#                   degenerates exactly to "global".
+# MEASURED NEGATIVE (scripts/eval_b_recal_oof.py, med compute, seed 42): on the
+# full 2,551-loan holdout the method-of-moments tau^2 is exactly 0 -- the
+# between-cohort spread of the OOT miscalibration ratio is fully explained by
+# binomial sampling noise -- so per-cohort degenerates to the global factor.
+# Out-of-fold (25 cohort-stratified 50/50 splits, both directions, paired) the
+# candidate NEVER improves: ties in 44/50 folds (tau^2=0), and in the 6 folds
+# where half-sample noise yields tau^2>0 it degrades weighted CDR MAE every
+# time (mean +0.0009). The global factor therefore remains the shipped mode.
+B_RECAL_MODE = "global"
+
 # --------------------------------------------------------------------------- #
 # Deliverable A decision rule
 # --------------------------------------------------------------------------- #
@@ -108,3 +125,12 @@ POLICY_RULE = "timing"
 # Decision basis: False -> approve iff point E[NPV] > 0 (P&L-optimal primary rule);
 # True -> conservative variant, decide at the lower E[NPV] credible bound.
 POLICY_CONSERVATIVE = False
+
+# WS3->decision lever: when True, the approve/decline E[NPV] is re-priced at the
+# conformal UPPER PD bound (point + split-conformal half-width fit on the
+# validation funded subset) instead of the raw point E[NPV]
+# (policy.conformal_adjusted_enpv). Default OFF: the out-of-fold gate
+# (scripts/exp_conformal_decision.py, repeated 50/50 splits on the funded
+# holdout) showed the conformal-upper-bound decision LOWERS realized P&L vs the
+# timing-point rule, so the lever is implemented but not adopted.
+POLICY_CONFORMAL_DECISION = False

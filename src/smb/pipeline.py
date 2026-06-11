@@ -168,18 +168,11 @@ def build_submission_a(
     X = features.build_features(df)
     amount = pd.to_numeric(df["requested_amount"], errors="coerce").to_numpy(dtype=float)
 
-    res = policy.portfolio_decisions(
-        models, X, amount, rec_interm, rec_spike,
-        rule=config.POLICY_RULE, conservative=config.POLICY_CONSERVATIVE,
-    )
-    decision = res["decision"].astype(int)
-    point = res["predicted_pd"]
-    lower = res["pd_lower_90"]
-    upper = res["pd_upper_90"]
-
-    # WS3: split-conformal recalibration of the reported PD + 90% band, fit on the
-    # validation funded subset (the natural out-of-time set with outcomes). The
-    # decision above is unchanged; only the reported PD columns are recalibrated.
+    # WS3: split-conformal half-width fit on the validation funded subset (the
+    # natural out-of-time set with outcomes). It recalibrates the reported PD +
+    # 90% band below; if config.POLICY_CONFORMAL_DECISION it is ALSO folded into
+    # the decision (E[NPV] at the conformal upper PD bound).
+    hw = None
     val = ds.validation
     val_funded = val[val["default_flag"].notna()].reset_index(drop=True)
     if len(val_funded) >= 50:
@@ -193,6 +186,19 @@ def build_submission_a(
         hw = calibration.fit_pd_band(
             resv["predicted_pd"], val_funded["default_flag"].to_numpy(float)
         )
+
+    decision_hw = hw if (config.POLICY_CONFORMAL_DECISION and hw is not None) else None
+    res = policy.portfolio_decisions(
+        models, X, amount, rec_interm, rec_spike,
+        rule=config.POLICY_RULE, conservative=config.POLICY_CONSERVATIVE,
+        conformal_hw=decision_hw,
+    )
+    decision = res["decision"].astype(int)
+    point = res["predicted_pd"]
+    lower = res["pd_lower_90"]
+    upper = res["pd_upper_90"]
+
+    if hw is not None:
         lower, point, upper = calibration.apply_pd_band(hw, point)
 
     scored = pd.DataFrame(
@@ -257,16 +263,27 @@ def build_submission_b(
     dec_map = dict(zip(sub_a["applicant_id"].astype(str), sub_a["decision"].astype(int)))
     decisions = df["applicant_id"].astype(str).map(dec_map).fillna(0).astype(int).to_numpy()
 
-    # WS2: out-of-time CIF recalibration scale, fit on the validation funded subset.
+    # WS2: out-of-time CIF recalibration, fit on the validation funded subset.
+    # config.B_RECAL_MODE selects the single global lifetime ratio or the
+    # per-cohort EB-shrunk factors (shrinkage toward the global factor is the
+    # overfitting guard for 13 cohorts on a 2,551-loan calibration set).
     val = ds.validation
     val_funded = val[val["default_flag"].notna()].reset_index(drop=True)
     cif_scale = 1.0
+    cohort_scales = None
     if len(val_funded) >= 50:
-        cif_scale = survival.fit_cif_scale(
-            models, val_funded, val_funded["default_flag"].to_numpy(float)
-        )
+        y_val = val_funded["default_flag"].to_numpy(float)
+        cif_scale = survival.fit_cif_scale(models, val_funded, y_val)
+        if config.B_RECAL_MODE == "per_cohort":
+            cohort_scales, _ = survival.fit_cif_scales_per_cohort(
+                models, val_funded, y_val,
+                data.assign_cohort_week(val_funded).to_numpy(dtype=float),
+            )
 
-    traj = survival.predict_trajectory(models, df, decisions, cohort_weeks, cif_scale=cif_scale)
+    traj = survival.predict_trajectory(
+        models, df, decisions, cohort_weeks,
+        cif_scale=cif_scale, cif_scale_by_cohort=cohort_scales,
+    )
 
     # Anchor on the template grid to guarantee the exact 13x13 row set/order.
     template = pd.read_csv(config.SUBMISSION_B_TEMPLATE_CSV)

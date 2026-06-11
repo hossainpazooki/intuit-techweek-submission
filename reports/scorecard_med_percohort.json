@@ -1,0 +1,157 @@
+{
+  "_caveat": "PROXY score; true score uses hidden labels + hidden normalization. Measured on the out-of-time validation funded holdout; weights per brief p.14.",
+  "compute": "med",
+  "budget": {
+    "bag_size": 5,
+    "hp_width": 2,
+    "conformal_folds": 5,
+    "boot_b": 120,
+    "boot_c": 120,
+    "enpv_lo_pct": 5.0,
+    "sev_resolution": 5,
+    "sev_seeds": 4
+  },
+  "policy_rule": "timing",
+  "recovery_interm": 0.11782952093890374,
+  "recovery_spike": 0.00013095693536465967,
+  "weights": {
+    "pnl": 0.3,
+    "traj": 0.25,
+    "cal": 0.2,
+    "c": 0.1,
+    "write": 0.15
+  },
+  "pnl_proxy": {
+    "total_flat_point": 578827.7028150398,
+    "approval_rate_flat_point": 0.3629949039592317,
+    "total_flat_cons": 568815.8401076949,
+    "approval_rate_flat_cons": 0.2951783614268914,
+    "total_timing_point": 541654.3487484511,
+    "approval_rate_timing_point": 0.595844766758134,
+    "total_timing_cons": 587782.5649666418,
+    "approval_rate_timing_cons": 0.5009800078400627,
+    "headline_rule": "timing_point",
+    "our_total": 541654.3487484511,
+    "legacy_total": -2559745.662274491,
+    "approve_all_total": -2559745.662274491,
+    "oracle_total": 4751413.551247706,
+    "n_holdout": 2551,
+    "uplift_vs_legacy": 3101400.011022942,
+    "uplift_vs_flat_baseline": -27161.49135924375,
+    "approval_rate_headline": 0.595844766758134,
+    "norm": 0.4242008579551673
+  },
+  "traj_proxy": {
+    "weighted_mae": 0.014903592949173455,
+    "naive_weighted_mae": 0.025913014281059018,
+    "cif_scale": 1.1068187259604259,
+    "b_recal_mode": "per_cohort",
+    "per_cohort_recal": {
+      "tau2": 0.0,
+      "global_ratio": 1.1068187259604259,
+      "raw_ratios": [
+        1.053561989068451,
+        1.2215102573488212,
+        1.0924738883150296,
+        0.9563439894276012,
+        1.30500157223554,
+        1.0682807013451843,
+        1.1313837832451794,
+        1.166519941132556,
+        1.0324112990272925,
+        1.206712374146903,
+        1.102622301737789,
+        1.129534400828329,
+        0.8218122935213774
+      ],
+      "sampling_var": [
+        0.02045150318265575,
+        0.022474398858165486,
+        0.025941924480312354,
+        0.02056150739298733,
+        0.023349936070578135,
+        0.022795799176103367,
+        0.02657721800980226,
+        0.02108578639336064,
+        0.026173477140482453,
+        0.02679535164696755,
+        0.027867664813739246,
+        0.024256390906756853,
+        0.023838889142548104
+      ],
+      "shrink_weights": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "n_per_cohort": [
+        207,
+        220,
+        189,
+        220,
+        208,
+        199,
+        205,
+        222,
+        174,
+        206,
+        177,
+        167,
+        157
+      ],
+      "factors": [
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259,
+        1.1068187259604259
+      ]
+    },
+    "norm_err": 0.5751393021099501,
+    "score": 0.4248606978900499,
+    "n_cohorts": 13
+  },
+  "cal_proxy": {
+    "coverage": 0.9,
+    "mean_width": 0.12348587915188647,
+    "raw_ensemble_coverage": 0.7,
+    "raw_ensemble_width": 0.06784925799130168,
+    "score": 0.9259084725088681,
+    "mean_predicted_pd": 0.18629396550033506,
+    "empirical_default_rate": 0.2061936495491964
+  },
+  "c_proxy": {
+    "available": false,
+    "error": "No module named 'cldd'",
+    "norm": 0.0
+  },
+  "writeup_proxy": {
+    "checklist": {
+      "scorecard": false,
+      "pnl_backtest_fig": false,
+      "coverage_curve": false,
+      "compute_curve": false,
+      "writeup_md": true
+    },
+    "frac": 0.2
+  },
+  "weighted_proxy": 0.4486571263608363
+}

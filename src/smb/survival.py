@@ -234,6 +234,132 @@ def fit_cif_scale(
     return float(np.clip(np.mean(y) / pred_mean, lo, hi))
 
 
+def shrunk_cohort_ratios(
+    y: np.ndarray,
+    pred: np.ndarray,
+    cohort_weeks: np.ndarray,
+    n_cohorts: int = config.N_COHORT_WEEKS,
+    lo: float = 0.8,
+    hi: float = 1.5,
+) -> tuple[np.ndarray, dict]:
+    """Per-cohort CIF recalibration factors with empirical-Bayes shrinkage.
+
+    Raw per-cohort ratio r_c = realized lifetime default rate / mean predicted
+    lifetime PD, computed on the calibration rows of cohort c. With ~200 loans
+    per cohort the raw r_c is dominated by binomial noise (SE on the rate is
+    ~0.028 at p~0.2), so fitting 13 free factors overfits the holdout. We shrink
+    toward the global ratio r_g with the standard normal-normal EB estimator:
+
+        f_c = r_g + tau^2 / (tau^2 + s_c^2) * (r_c - r_g)
+
+    where s_c^2 = ybar_c(1-ybar_c) / (n_c * predbar_c^2) is the delta-method
+    sampling variance of r_c (binomial numerator, denominator treated as fixed)
+    and tau^2 is the method-of-moments between-cohort variance
+    max(0, Var(r_c) - mean(s_c^2)). tau^2 = 0 (spread explained by sampling
+    noise) degenerates gracefully to the global factor; large n_c earns more
+    weight on the cohort's own ratio — no free hyperparameter. ybar_c is floored
+    at 0.5/n_c in the variance so zero-default cohorts don't get s_c^2 = 0
+    (which would wrongly disable shrinkage). Cohorts with no calibration rows
+    get r_g. All factors are clipped to [lo, hi] like the global factor.
+
+    Returns (factors, diag) with ``factors`` shape (n_cohorts,) indexed by
+    cohort_week - 1, and ``diag`` carrying tau^2, r_g, and per-cohort raw
+    ratios / sampling variances / shrink weights / sample sizes.
+    """
+    y = np.asarray(y, dtype=float).ravel()
+    pred = np.asarray(pred, dtype=float).ravel()
+    coh = np.asarray(cohort_weeks, dtype=float).ravel()
+
+    pred_mean = float(np.mean(pred))
+    r_g = float(np.mean(y) / pred_mean) if pred_mean > 1e-9 else 1.0
+
+    r_raw = np.full(n_cohorts, np.nan)
+    s2 = np.full(n_cohorts, np.nan)
+    n_per = np.zeros(n_cohorts, dtype=int)
+    for c in range(1, n_cohorts + 1):
+        sel = coh == float(c)
+        n = int(np.sum(sel))
+        if n == 0:
+            continue
+        yb = float(np.mean(y[sel]))
+        pb = float(np.mean(pred[sel]))
+        if pb <= 1e-9:
+            continue
+        r_raw[c - 1] = yb / pb
+        yb_f = float(np.clip(yb, 0.5 / n, 1.0 - 0.5 / n))
+        s2[c - 1] = yb_f * (1.0 - yb_f) / (n * pb * pb)
+        n_per[c - 1] = n
+
+    obs = np.isfinite(r_raw)
+    if int(np.sum(obs)) >= 2:
+        tau2 = max(0.0, float(np.var(r_raw[obs], ddof=1)) - float(np.mean(s2[obs])))
+    else:
+        tau2 = 0.0
+
+    factors = np.full(n_cohorts, r_g, dtype=float)
+    weights = np.zeros(n_cohorts, dtype=float)
+    if tau2 > 0.0:
+        w = tau2 / (tau2 + s2[obs])
+        factors[obs] = r_g + w * (r_raw[obs] - r_g)
+        weights[obs] = w
+    factors = np.clip(factors, lo, hi)
+
+    diag = {
+        "tau2": float(tau2),
+        "global_ratio": float(np.clip(r_g, lo, hi)),
+        "raw_ratios": [float(v) if np.isfinite(v) else None for v in r_raw],
+        "sampling_var": [float(v) if np.isfinite(v) else None for v in s2],
+        "shrink_weights": [float(v) for v in weights],
+        "n_per_cohort": [int(v) for v in n_per],
+        "factors": [float(v) for v in factors],
+    }
+    return factors, diag
+
+
+def fit_cif_scales_per_cohort(
+    models: list[HazardModel],
+    calib_frame: pd.DataFrame,
+    y_calib: np.ndarray,
+    cohort_weeks: np.ndarray,
+    lo: float = 0.8,
+    hi: float = 1.5,
+) -> tuple[np.ndarray, dict]:
+    """Per-cohort CIF recalibration factors (EB-shrunk), fit out-of-time.
+
+    Same calibration target as ``fit_cif_scale`` (realized lifetime default vs
+    ensemble-mean predicted lifetime PD on a funded OOT set), but resolved per
+    cohort_week with empirical-Bayes shrinkage toward the global factor — see
+    ``shrunk_cohort_ratios`` for the estimator and the overfitting guard.
+    """
+    from . import features as _features
+
+    y = np.asarray(y_calib, dtype=float)
+    X = _features.build_features(calib_frame)
+    preds = []
+    for m in models:
+        sc = [c for c in m.feature_cols if c != "loan_age_weeks"]
+        preds.append(np.asarray(lifetime_pd(m, _features.align_columns(X, sc)), dtype=float))
+    pred = np.mean(np.vstack(preds), axis=0)
+    return shrunk_cohort_ratios(y, pred, cohort_weeks, lo=lo, hi=hi)
+
+
+def per_loan_scale(
+    cohort_weeks: np.ndarray,
+    cohort_scales: np.ndarray,
+    fallback: float = 1.0,
+) -> np.ndarray:
+    """Map per-cohort factors onto loans via their cohort_week (1-based).
+
+    Loans with NaN / out-of-range cohort get ``fallback`` (the global factor).
+    """
+    coh = np.asarray(cohort_weeks, dtype=float).ravel()
+    scales = np.asarray(cohort_scales, dtype=float).ravel()
+    out = np.full(coh.shape[0], float(fallback), dtype=float)
+    ok = np.isfinite(coh) & (coh >= 1) & (coh <= len(scales))
+    out[ok] = scales[coh[ok].astype(int) - 1]
+    return out
+
+
 def predict_trajectory(
     models: list[HazardModel],
     decision_frame: pd.DataFrame,
@@ -241,6 +367,7 @@ def predict_trajectory(
     cohort_weeks: np.ndarray,
     oot_iso=None,
     cif_scale: float = 1.0,
+    cif_scale_by_cohort: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """Produce the 169-row B grid (cohort_week x loan_age_weeks).
 
@@ -270,6 +397,14 @@ def predict_trajectory(
     # re-aligns to each model's columns and adds loan_age_weeks itself.
     X_full = features.build_features(decision_frame)
 
+    # Per-loan recalibration scale: per-cohort EB-shrunk factors when provided
+    # (loans outside the cohort calendar fall back to the global cif_scale),
+    # otherwise the single global factor.
+    if cif_scale_by_cohort is not None:
+        loan_scale = per_loan_scale(cohort_weeks, cif_scale_by_cohort, fallback=cif_scale)
+    else:
+        loan_scale = None
+
     # Per-model, per-cohort CIF curves: stack[m] has shape (n_cohorts, weeks).
     per_model_cohort = np.full((len(models), n_cohorts, weeks), np.nan, dtype=float)
     per_model_overall = np.full((len(models), weeks), np.nan, dtype=float)
@@ -278,9 +413,12 @@ def predict_trajectory(
         h_d, h_p = hazard_curves(model, X_full)
         cif = cif_default(h_d, h_p)  # (N, weeks)
         # WS2: out-of-time recalibration -- the hazard systematically under-predicts
-        # on the OOT cohort (lifetime ratio ~1.12); a global scale fit on the
-        # validation funded subset corrects it. Clipped to [0,1].
-        if cif_scale != 1.0:
+        # on the OOT cohort (lifetime ratio ~1.12); a scale fit on the validation
+        # funded subset corrects it (per-cohort EB-shrunk factors when supplied,
+        # else one global factor). Clipped to [0,1].
+        if loan_scale is not None:
+            cif = np.clip(cif * loan_scale[:, None], 0.0, 1.0)
+        elif cif_scale != 1.0:
             cif = np.clip(cif * cif_scale, 0.0, 1.0)
 
         if approved_mask.any():
