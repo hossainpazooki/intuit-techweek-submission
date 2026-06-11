@@ -146,7 +146,7 @@ collapses (§3), measured in one world rather than two.
   +0.0017 ± 0.0013), and the MAE gain trades a small but consistent increase in
   negative bias (g-comp bias more negative than naive on 5/5 seeds) — measured
   limits, not the exact real-data magnitudes.
-- **Two "obvious next steps" are tested negatives, not future work.**
+- **Three "obvious next steps" are tested negatives, not future work.**
   (a) *Conformal-into-the-decision:* re-pricing E[NPV] at the conformal upper PD
   bound (`scripts/exp_conformal_decision.py`; out-of-fold, half-width fit on one
   half of the funded holdout, realized P&L of the decisions on the disjoint
@@ -158,7 +158,18 @@ collapses (§3), measured in one world rather than two.
   **zero** (cohort spread fully explained by binomial noise at ~200
   loans/cohort), so the estimator degenerates to the global factor; out-of-fold
   (`scripts/eval_b_recal_oof.py`, 50 paired evals) per-cohort factors never win.
-  Both code paths ship dormant behind flags, with the experiments committed.
-- **With another day:** a *signed* OOT level correction in the decision rule
-  (the symmetric band above is the wrong shape, not the wrong idea); bootstrap
-  bands for C scaled by compute.
+  (c) *Signed OOT level correction in the decision:* scaling A's lifetime PD by
+  the measured OOT factor (the B-recal ratio ≈1.107, fit on the cal half) before
+  the E[NPV] integration (`scripts/exp_oot_decision.py`, same OOF protocol). This
+  is the *right shape* the symmetric band (a) lacked — a measured shift, not an
+  interval width, and it behaves as designed (approval 0.60 → 0.55) — but it
+  still does not improve realized P&L: **−$4.8K ± $57K** per test half, wins
+  10/20 (a coin flip). The marginal loans the up-shift newly declines were, on
+  net, profitable on this holdout. All three code paths ship dormant behind
+  flags, with the experiments committed.
+- **With another day:** bootstrap bands for C scaled by compute. (We also
+  explored five g-computation estimator variants in the harness — richer
+  ancestor parent-sets, bagged child mechanisms, stronger regressors, post-arm
+  debiasing, fixpoint propagation — but none improved the strong-propagation MAE
+  across all five seeds, so the deployed estimator is at its achievable frontier
+  on that slice; see `docs/VERIFICATION.md`.)

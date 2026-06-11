@@ -45,6 +45,8 @@
     "weighted_mae": 0.014966819014031636,
     "naive_weighted_mae": 0.025913014281059018,
     "cif_scale": 1.1090575814406138,
+    "b_recal_mode": "global",
+    "per_cohort_recal": {},
     "norm_err": 0.5775792368922342,
     "score": 0.4224207631077658,
     "n_cohorts": 13
@@ -59,9 +61,9 @@
     "empirical_default_rate": 0.2061936495491964
   },
   "c_proxy": {
-    "naive_mae": 0.10847326225340667,
-    "gcomp_mae": 0.08539524352492496,
-    "norm": 0.21275306235898636,
+    "naive_mae": 0.10516544139156467,
+    "gcomp_mae": 0.09211010864636017,
+    "norm": 0.12414090192038758,
     "available": true
   },
   "writeup_proxy": {
@@ -74,5 +76,5 @@
     },
     "frac": 0.8
   },
-  "weighted_proxy": 0.5590881396887517
+  "weighted_proxy": 0.5502269236448918
 }

@@ -61,19 +61,20 @@
     "empirical_default_rate": 0.2061936495491964
   },
   "c_proxy": {
-    "available": false,
-    "error": "No module named 'cldd'",
-    "norm": 0.0
+    "naive_mae": 0.10709051061795291,
+    "gcomp_mae": 0.1054503563661134,
+    "norm": 0.015315589050562926,
+    "available": true
   },
   "writeup_proxy": {
     "checklist": {
-      "scorecard": false,
-      "pnl_backtest_fig": false,
+      "scorecard": true,
+      "pnl_backtest_fig": true,
       "coverage_curve": false,
-      "compute_curve": false,
+      "compute_curve": true,
       "writeup_md": true
     },
-    "frac": 0.2
+    "frac": 0.8
   },
-  "weighted_proxy": 0.4486571263608363
+  "weighted_proxy": 0.5401886852658926
 }

@@ -110,6 +110,48 @@ def conformal_adjusted_enpv(
     return enpv_point + extra * amount * (w - economics.REPAID_NPV_RATE)
 
 
+def oot_adjusted_enpv(
+    enpv_point: np.ndarray,
+    pd_point: np.ndarray,
+    p_def_mean: np.ndarray,
+    amount: np.ndarray,
+    oot_factor: float,
+    recovery_interm: float = config.RECOVERY_PRIOR,
+    recovery_spike: float = 0.0,
+) -> np.ndarray:
+    """E[NPV] re-priced at the SIGNED out-of-time (OOT) lifetime-PD correction.
+
+    The hazard model under-predicts default out-of-time by a measured signed
+    factor (the B-recalibration lifetime ratio, ``survival.fit_cif_scale`` ~1.107).
+    Deliverable B corrects its trajectory by this factor; this lever applies the
+    same measured shift to A's lifetime PD before the E[NPV] decision. Scaling
+    lifetime PD up by ``oot_factor`` moves ``(oot_factor - 1) * pd`` of probability
+    mass from "repay" to "default", distributed over the loan's OWN predicted
+    default-timing profile (so the timing rule's credit for late-in-term draws is
+    preserved), and re-prices:
+
+        enpv_oot_i = enpv_point_i + extra_i * R_i * (w_i - REPAID_NPV_RATE)
+
+    where extra_i = clip((oot_factor - 1) * pd_i, 0, 1 - pd_i) and w_i is the
+    per-unit default NPV averaged over loan i's default-week distribution. Loans
+    with ~zero predicted default mass are charged at the worst case (day-90 total
+    loss). Unlike the conformal lever this is a measured shift of the PD level,
+    not a symmetric interval width.
+    """
+    enpv_point = np.asarray(enpv_point, dtype=float).ravel()
+    pd_point = np.asarray(pd_point, dtype=float).ravel()
+    P = np.asarray(p_def_mean, dtype=float)
+    amount = np.asarray(amount, dtype=float).ravel()
+    oot_factor = float(oot_factor)
+
+    npv_week_unit = economics._npv_default_unit_by_week(recovery_interm, recovery_spike)
+    extra = np.clip((oot_factor - 1.0) * pd_point, 0.0, 1.0 - pd_point)
+    denom = np.maximum(pd_point, 1e-12)
+    w = (P @ npv_week_unit) / denom
+    w = np.where(pd_point < 1e-9, npv_week_unit[-1], w)
+    return enpv_point + extra * amount * (w - economics.REPAID_NPV_RATE)
+
+
 def portfolio_decisions(
     models,
     X_static,

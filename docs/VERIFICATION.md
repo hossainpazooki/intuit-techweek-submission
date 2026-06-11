@@ -226,3 +226,23 @@ holds via effect-size collapse rather than a sign flip. The SCM IPW frontier mov
 slightly (declined-ECE 0.036 / 0.038 / 0.097, fail 0.244 at 0.6) but the operating
 frontier is **still exactly 0.4**. The Claim 1 / Claim 2 numbers above are these
 corrected post-fix values.
+
+## Round 4 — C g-computation optimization explored (negative, 2026-06-11)
+
+After the leak fix lowered the C proxy, five candidate improvements to the
+harness `GComputationEstimator` were prototyped and measured on the
+strong-propagation slice (severity 0.4): (1) stronger child-mechanism
+regressors, (2) bagged child mechanisms, (3) full transitive-ancestor parent
+sets, (4) post-arm bias correction, (5) damped fixpoint propagation. Each
+prototype changed **only** the g-computation arm (naive MAE bit-identical to
+baseline at every seed — no proxy-gaming).
+
+At seed 42 the ancestor-parent-set variant looked best (c_norm 0.113 vs the
+seed-42 baseline 0.100). But across all five seeds {7,13,42,101,2026} it
+improves on only **3/5** and regresses on 2/5; **mean c_norm 0.150 vs baseline
+0.151 — a wash**. The "0.100 to beat" was itself a seed-42 artifact (the true
+5-seed baseline mean is 0.151), and the seed-42 win was exactly the
+single-seed overfitting the check was designed to catch. The other four
+variants were at or below baseline. **Verdict: no genuine generalizing
+improvement; the deployed estimator is at its achievable frontier on this
+slice.** Nothing adopted; prototypes discarded.
