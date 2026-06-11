@@ -140,14 +140,16 @@ bank-feed leak fix of 2026-06-11 — see Round 3 — re-run on the gated SCM).
   **0.0856 ± 0.0138** vs naive **0.0989 ± 0.0182**; gap **+0.0133 ± 0.0068,
   positive on 5/5 seeds, no sign flips** — a ~13% relative reduction. The
   overall (all-query) gap is **+0.0019 ± 0.0021**, much thinner; the win lives
-  where interventions actually propagate.
+  where interventions actually propagate. *(5-seed claim — superseded at scale:
+  the 25-seed extension in Round 5 holds the mean but finds one sign flip,
+  24/25 positive.)*
 - **Seed 42 — the previously published seed — sits in the lower half of the
   five** (2nd-smallest strong-propagation gap, +0.0079). The single-seed number
   was representative of the spread, not a cherry-picked best case.
 - **The full-severity advantage did NOT survive.** At severity 1.0 the
   strong-propagation gap collapses by nearly an order of magnitude to
-  **+0.0017 ± 0.0013** — uniformly positive across seeds but negligible, with no
-  deployable value. Any claim of even a small full-severity win died here;
+  **+0.0017 ± 0.0013** — uniformly positive across these 5 seeds but negligible,
+  with no deployable value *(at 25 seeds: 5 sign flips, 20/25 positive — Round 5)*. Any claim of even a small full-severity win died here;
   the docs say "no reliable advantage" and nothing softer.
 - **A disclosed trade-off, not seed noise:** g-comp's bias is *more* negative
   than naive's on **5/5 seeds** at severity 0.4 (seed 42: −0.0233 vs −0.0219).
@@ -218,7 +220,8 @@ by design (seed-42 strong gap threshold 0.008 → 0.005); 50/50 tests green;
 fidelity 51/51 green.
 
 **Corrected certification (5-seed sweep, gated SCM).** Severity 0.4 strong-prop
-gap **+0.0191 ± 0.0046 → +0.0133 ± 0.0068** (still 5/5 positive, no sign flips;
+gap **+0.0191 ± 0.0046 → +0.0133 ± 0.0068** (5/5 positive on that sweep; at 25
+seeds, 24/25 — Round 5;
 ~19% → ~13% relative). Severity 1.0 **+0.0021 ± 0.0022 → +0.0017 ± 0.0013** — now
 uniformly positive (the old seed-13 sign flip is gone) but collapsed by nearly an
 order of magnitude, so the "no deployable advantage at full severity" conclusion
@@ -246,3 +249,36 @@ single-seed overfitting the check was designed to catch. The other four
 variants were at or below baseline. **Verdict: no genuine generalizing
 improvement; the deployed estimator is at its achievable frontier on this
 slice.** Nothing adopted; prototypes discarded.
+
+## Round 5 — 25-seed certification + severity collapse curve (2026-06-11)
+
+**What was done.** The 5-seed certification was deliberately stress-tested at
+scale: 20 new seeds ({3,5,11,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83})
+at severities {0.4, 1.0}, plus the severity grid filled at {0.6, 0.8} on the
+original 5 seeds. Evidence: harness `artifacts/seed_sweep_25.csv` (50 rows; the
+original-seed rows are the untouched committed values), `severity_curve.csv`,
+and the driver `run_sweep_25_driver.py`. All evals one-per-subprocess,
+sequential; a skeptic agent recomputed every statistic from the raw rows
+(full-precision match) and reproduced the new sign flip deterministically in a
+fresh subprocess.
+
+**What survived, sharpened.** At severity 0.4 the mean **held** (+0.0133 →
+**+0.0134 ± 0.0085**) and is ≈8 standard errors above zero — statistically
+stronger than the 5-seed version. Strong-prop MAE: naive **0.0991 ± 0.0190** vs
+g-comp **0.0857 ± 0.0151** (~13.5% relative). The bias disclosure strengthened:
+g-comp more negative on **25/25** seeds.
+
+**What was refuted.** The standing "**no sign flips**" claim did not survive
+scale: **seed 23 flips negative at severity 0.4** (−0.0041; 24/25 positive), and
+severity 1.0 flips on **5/25** seeds (+0.0017 ± 0.0020). The 5-seed interval
+understated variance (sd 0.0068 → 0.0085). All docs now say "24/25" — the flip
+is reported, never buried.
+
+**The collapse curve** (original 5 seeds, paired): +0.0133 → +0.0059 → +0.0050 →
++0.0017 over severity 0.4 → 0.6 → 0.8 → 1.0. The shape is a **sharp drop, then a
+noise-flat plateau, then the floor** — ~63% of the collapse happens across the
+0.4 → 0.6 step, the same boundary where the IPW frontier breaks, which turns the
+"one structural mechanism bounds both methods" claim from a two-point assertion
+into a measured curve. Caveats stated: the 0.6 point has one sign flip (seed 7)
+and the 0.6 → 0.8 ordering inverts on 3/5 seeds (that segment is flat within
+noise, not resolved).

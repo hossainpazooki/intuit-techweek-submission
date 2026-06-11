@@ -82,19 +82,24 @@ counterfactuals), we built a **fidelity-gated synthetic validation harness**
 (`closed-loop-default-detection`): a structural causal model tuned to match the
 real marginals (fidelity gate green), with a true `do()` oracle. There we grade a
 deployable **g-computation estimator** (fit on approved rows only, no SCM
-coefficients) against **naive conditioning**. Certified across a **5-seed sweep**
-(seeds 7/13/42/101/2026, 900 queries each): on the **strong-propagation** slice at
-moderate selection severity (0.4), g-computation MAE is **0.0856 ± 0.0138 vs naive
-0.0989 ± 0.0182** — gap **+0.0133 ± 0.0068, positive on 5/5 seeds with no sign
-flips**, a **~13% relative reduction** in interventional error exactly where naive
-conditioning is structurally wrong (it ignores that intervening on a parent moves
-its children).
+coefficients) against **naive conditioning**. Certified across a **25-seed sweep**
+(900 queries each): on the **strong-propagation** slice at moderate selection
+severity (0.4), g-computation MAE is **0.0857 ± 0.0151 vs naive 0.0991 ± 0.0190**
+— gap **+0.0134 ± 0.0085, positive on 24/25 seeds** (≈8 standard errors above
+zero; the one flip, −0.004, is reported, not buried), a **~13% relative
+reduction** in interventional error exactly where naive conditioning is
+structurally wrong (it ignores that intervening on a parent moves its children).
+A 5-seed pilot gave the same mean with a narrower interval — scaling confirmed
+the mean and exposed the variance the small sweep understated.
 
-The harness also measures where this stops working. At **full selection severity
-(1.0)** the strong-propagation gap collapses by nearly an order of magnitude to
-**+0.0017 ± 0.0013** — negligible and of no deployable value, and we claim none.
-This is the same limit that breaks the IPW selective-labels frontier between
-severity 0.4 and 0.6 (§4): estimators fit on approved rows whose conditionals are distorted by
+The harness also measures where this stops working — as a **measured collapse
+curve**, not an asserted cliff. Sweeping severity over {0.4, 0.6, 0.8, 1.0}
+(paired seeds), the gap falls **+0.0133 → +0.0059 → +0.0050 → +0.0017**: most of
+the collapse happens across the same 0.4 → 0.6 boundary where the IPW frontier
+breaks (§4), then a noise-flat plateau, then the floor. At **full severity (1.0)**
+the 25-seed gap is **+0.0017 ± 0.0020 with sign flips on 5/25 seeds** — negligible
+and of no deployable value, and we claim none. This is the same limit that breaks
+the IPW selective-labels frontier between severity 0.4 and 0.6 (§4): estimators fit on approved rows whose conditionals are distorted by
 selection on an *unobserved* confounder. Backdoor adjustment cannot fix unobserved
 confounding; IPW cannot fix broken positivity — **one structural mechanism bounds
 both the observational reweighting fix and the causal estimator**, measured
@@ -141,11 +146,11 @@ collapses (§3), measured in one world rather than two.
   different draw-accounting convention would move the P&L level.
 - **C is g-computation-in-spirit, not a fitted SCM on real data** — positivity
   failure makes a full real-data SCM unidentified. The harness certifies direction
-  across 5 seeds **only inside the severity ≤ 0.4 frontier**; at full selection
-  severity the advantage collapses by nearly an order of magnitude (to a negligible
-  +0.0017 ± 0.0013), and the MAE gain trades a small but consistent increase in
-  negative bias (g-comp bias more negative than naive on 5/5 seeds) — measured
-  limits, not the exact real-data magnitudes.
+  across 25 seeds (24/25 positive) **only inside the severity ≤ 0.4 frontier**; at
+  full selection severity the advantage collapses by nearly an order of magnitude
+  (+0.0017 ± 0.0020, sign flips on 5/25 seeds), and the MAE gain trades a small but
+  consistent increase in negative bias (g-comp bias more negative than naive on
+  25/25 seeds) — measured limits, not the exact real-data magnitudes.
 - **Three "obvious next steps" are tested negatives, not future work.**
   (a) *Conformal-into-the-decision:* re-pricing E[NPV] at the conformal upper PD
   bound (`scripts/exp_conformal_decision.py`; out-of-fold, half-width fit on one

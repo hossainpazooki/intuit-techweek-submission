@@ -159,9 +159,9 @@ flowchart TD
   non-manipulable identity features (sector, vintage) refused rather than faked. Because
   real data can't validate interventional accuracy, a **fidelity-gated synthetic harness**
   (the sibling `closed-loop-default-detection` repo) certifies the *direction*: on the
-  strong-propagation slice at severity 0.4, g-computation MAE **0.086 ± 0.014** vs naive
-  conditioning **0.099 ± 0.018** across 5 seeds — gap **+0.013 ± 0.007, positive on 5/5
-  seeds**, no sign flips.
+  strong-propagation slice at severity 0.4, g-computation MAE **0.086 ± 0.015** vs naive
+  conditioning **0.099 ± 0.019** across **25 seeds** — gap **+0.013 ± 0.008, positive on
+  24/25 seeds** (≈8 SE above zero; the one flip is reported, not buried).
 
 ---
 
@@ -179,11 +179,13 @@ model**, hide it the way the real process does, and measure against it
 | accuracy at default rates outside the realized window | only one realized regime | sweep the base rate / selection severity |
 
 This is how Deliverable C's g-computation is certified on ground truth the real data
-cannot provide — **across 5 seeds, no sign flips** at moderate selection (severity 0.4).
-The certification is honest about its boundary: at full selection severity the advantage
-collapses by nearly an order of magnitude (gap +0.0017 ± 0.0013, negligible) — selection on an
-*unobserved* confounder defeats backdoor adjustment, and we say so rather than claim a
-deployable win. And the three rows are one experiment, not three: the declined-calibration
+cannot provide — **across 25 seeds, positive on 24/25** at moderate selection (severity
+0.4). The certification is honest about its boundary, measured as a **collapse curve**
+(+0.0133 → +0.0059 → +0.0050 → +0.0017 over severity 0.4 → 0.6 → 0.8 → 1.0, with most of
+the collapse across the same 0.4 → 0.6 step where the IPW frontier breaks): at full
+selection severity the advantage is +0.0017 ± 0.0020 with sign flips on 5/25 seeds —
+negligible — selection on an *unobserved* confounder defeats backdoor adjustment, and we
+say so rather than claim a deployable win. And the three rows are one experiment, not three: the declined-calibration
 loop now runs on the SCM itself, where IPW holds declined-cohort ECE through severity
 0.4 (0.097, seed 42) and fails at 0.6 — the same operating frontier, in the same synthetic world,
 as the counterfactual result. This is why we report drivers as interventional effects
@@ -282,8 +284,9 @@ What we'd tell the next team, distilled from `LEARNINGS.md` and `docs/VERIFICATI
   propagate structural descendants; for the rest, label it observational rather than
   overclaim a full SCM where positivity fails. When the real data can't validate a claim,
   build a *fidelity-gated synthetic oracle* and certify the **direction** there — with
-  multi-seed error bars, not one lucky seed (strong-propagation MAE gap **+0.013 ± 0.007,
-  positive on 5/5 seeds** at severity 0.4). The oracle also bounds the regime sharply:
+  multi-seed error bars, not one lucky seed (strong-propagation MAE gap **+0.013 ± 0.008,
+  positive on 24/25 seeds** at severity 0.4 — scaling from 5 to 25 seeds held the mean
+  and exposed one sign flip the small sweep missed). The oracle also bounds the regime sharply:
   inside the frontier (severity ≤ 0.4) IPW holds declined-cohort calibration *and*
   g-computation reliably improves counterfactual MAE; beyond it, selection on an
   unobserved confounder defeats both — **one structural mechanism, two measured failure

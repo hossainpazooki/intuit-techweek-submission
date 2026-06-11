@@ -474,13 +474,15 @@ subset, 2,551 loans, as held-out eval). The TRUE score is not locally computable
   raw→0.875 vs isotonic→0.53). Binned coverage 0.80 → **0.89** at width 0.134.
 - **WS4 — C is g-computation-in-spirit**; the `closed-loop-default-detection`
   harness certifies it beats naive conditioning on the strong-propagation slice
-  across a 5-seed counterfactual sweep (seeds 7/13/42/101/2026, 900 queries each):
-  at severity 0.4, MAE **0.0856 ± 0.0138** vs naive **0.0989 ± 0.0182** — gap
-  +0.0133 ± 0.0068, positive on **5/5 seeds, no sign flips** (~13% relative).
-  The advantage has a regime boundary: at full severity the gap collapses by nearly
-  an order of magnitude to +0.0017 ± 0.0013 — negligible, so we claim nothing
+  across a **25-seed** counterfactual sweep (900 queries each): at severity 0.4,
+  MAE **0.0857 ± 0.0151** vs naive **0.0991 ± 0.0190** — gap **+0.0134 ± 0.0085,
+  positive on 24/25 seeds** (≈8 SE above zero; one flip, reported) (~13% relative).
+  The advantage has a measured regime boundary — a collapse curve +0.0133 → +0.0059
+  → +0.0050 → +0.0017 over severity 0.4 → 0.6 → 0.8 → 1.0, steepest across the same
+  0.4 → 0.6 step where the IPW frontier breaks; at full severity the gap is
+  +0.0017 ± 0.0020 with sign flips on 5/25 seeds — negligible, so we claim nothing
   there. One disclosed trade-off: g-computation's bias is consistently *more*
-  negative than naive's (5/5 seeds; e.g. −0.0233 vs −0.0219) — it buys MAE at the
+  negative than naive's (25/25 seeds; mean −0.0295 vs −0.0244) — it buys MAE at the
   cost of slightly worse systematic underestimation.
 - **WS5 — Deliverable D** is `submission/submission_D_writeup.md`, auto-filled from
   the artifacts (scorecard, `pnl_backtest.png`, `compute_curve.png`).
