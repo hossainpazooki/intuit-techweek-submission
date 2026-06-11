@@ -72,6 +72,44 @@ def expected_profit(
 # --------------------------------------------------------------------------- #
 
 
+def conformal_adjusted_enpv(
+    enpv_point: np.ndarray,
+    pd_point: np.ndarray,
+    p_def_mean: np.ndarray,
+    amount: np.ndarray,
+    half_width: float,
+    recovery_interm: float = config.RECOVERY_PRIOR,
+    recovery_spike: float = 0.0,
+) -> np.ndarray:
+    """E[NPV] re-priced at the conformal UPPER PD bound (WS3 folded into the decision).
+
+    The split-conformal half-width (calibration.fit_pd_band) bounds how far the
+    raw ensemble PD can sit below the empirical default rate. Consistent with the
+    policy's "NPV at upper PD bound" design, the decision E[NPV] moves the
+    half-width of probability mass from "repay" to "default", distributed over
+    the loan's OWN predicted default-timing profile (so the timing rule's credit
+    for late-in-term draws is preserved), and re-prices:
+
+        enpv_conf_i = enpv_point_i + extra_i * R_i * (w_i - REPAID_NPV_RATE)
+
+    where extra_i = min(hw, 1 - pd_i) and w_i is the per-unit default NPV
+    averaged over loan i's default-week distribution. Loans with ~zero predicted
+    default mass are charged at the worst case (day-90 total loss).
+    """
+    enpv_point = np.asarray(enpv_point, dtype=float).ravel()
+    pd_point = np.asarray(pd_point, dtype=float).ravel()
+    P = np.asarray(p_def_mean, dtype=float)
+    amount = np.asarray(amount, dtype=float).ravel()
+    hw = abs(float(half_width))
+
+    npv_week_unit = economics._npv_default_unit_by_week(recovery_interm, recovery_spike)
+    extra = np.clip(np.minimum(hw, 1.0 - pd_point), 0.0, 1.0)
+    denom = np.maximum(pd_point, 1e-12)
+    w = (P @ npv_week_unit) / denom
+    w = np.where(pd_point < 1e-9, npv_week_unit[-1], w)
+    return enpv_point + extra * amount * (w - economics.REPAID_NPV_RATE)
+
+
 def portfolio_decisions(
     models,
     X_static,
@@ -81,6 +119,7 @@ def portfolio_decisions(
     *,
     rule: str = "timing",
     conservative: bool = True,
+    conformal_hw: float | None = None,
     lo_pct: float = config.INTERVAL_LOWER_Q * 100.0,
     hi_pct: float = config.INTERVAL_UPPER_Q * 100.0,
 ) -> dict:
@@ -100,9 +139,16 @@ def portfolio_decisions(
 
     Approve iff the (conservative) expected NPV is positive.
 
+    ``conformal_hw`` (WS3->decision lever, config.POLICY_CONFORMAL_DECISION):
+    when given, the decision basis is instead the E[NPV] evaluated at the
+    conformal upper PD bound ``pd_point + conformal_hw`` (see
+    conformal_adjusted_enpv). The half-width must be fit on data DISJOINT from
+    what the decision is evaluated on. Reported PD columns are unchanged.
+
     Returns a dict of float arrays (all shape (N,)):
         decision (int 0/1), predicted_pd, pd_lower_90, pd_upper_90,
-        enpv_point, enpv_lower, enpv_upper.
+        enpv_point, enpv_lower, enpv_upper
+        (+ enpv_conformal when conformal_hw is given).
     """
     from . import calibration, features, survival  # local: avoid import cycles
 
@@ -111,6 +157,7 @@ def portfolio_decisions(
 
     pd_rows: list[np.ndarray] = []
     enpv_rows: list[np.ndarray] = []
+    p_def_rows: list[np.ndarray] = []
     for m in model_list:
         static_cols = [c for c in m.feature_cols if c != "loan_age_weeks"]
         Xa = features.align_columns(X_static, static_cols)
@@ -120,6 +167,7 @@ def portfolio_decisions(
             enpv = economics.expected_npv_timing(
                 p_def, p_pay, amount, recovery_interm, recovery_spike
             )
+            p_def_rows.append(p_def)
         elif rule == "flat":
             pd_vec = np.asarray(survival.lifetime_pd(m, Xa), dtype=float).ravel()
             enpv = expected_npv(pd_vec, amount, recovery_interm)
@@ -138,7 +186,21 @@ def portfolio_decisions(
     enpv_lower = np.percentile(enpv_samples, lo_pct, axis=0)
     enpv_upper = np.percentile(enpv_samples, hi_pct, axis=0)
 
-    basis = enpv_lower if conservative else enpv_point
+    out_extra: dict = {}
+    if conformal_hw is not None:
+        if rule == "timing":
+            p_def_mean = np.mean(np.stack(p_def_rows), axis=0)
+            enpv_conf = conformal_adjusted_enpv(
+                enpv_point, pd_point, p_def_mean, amount,
+                float(conformal_hw), recovery_interm, recovery_spike,
+            )
+        else:
+            pd_up = np.clip(pd_point + abs(float(conformal_hw)), 0.0, 1.0)
+            enpv_conf = expected_npv(pd_up, amount, recovery_interm)
+        basis = enpv_conf
+        out_extra["enpv_conformal"] = enpv_conf
+    else:
+        basis = enpv_lower if conservative else enpv_point
     decision = (basis > 0).astype(int)
     decision = np.where(np.isfinite(amount), decision, 0).astype(int)
 
@@ -150,4 +212,5 @@ def portfolio_decisions(
         "enpv_point": enpv_point,
         "enpv_lower": enpv_lower,
         "enpv_upper": enpv_upper,
+        **out_extra,
     }

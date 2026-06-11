@@ -179,9 +179,23 @@ def traj_proxy(models, holdout, labeled, budget) -> dict:
         cif_stack.append(survival.cif_default(h_d, h_p))
     cif = np.mean(cif_stack, axis=0)  # (N, WEEKS)
 
-    # WS2: single-parameter out-of-time CIF recalibration (same as build_submission_b).
+    # WS2: out-of-time CIF recalibration (same as build_submission_b).
+    # config.B_RECAL_MODE: "global" = one lifetime ratio; "per_cohort" =
+    # 13 EB-shrunk factors (shrinkage toward the global ratio guards 13 cohorts
+    # on a 2,551-loan holdout against overfitting). NOTE: like the global scale,
+    # this is fit on the same holdout it is scored on (disclosed circularity of
+    # the WS2 protocol); the out-of-fold adopt/reject evidence lives in
+    # scripts/eval_b_recal_oof.py (repeated 50/50 splits).
     cif_scale = survival.fit_cif_scale(models, holdout, flag)
-    cif = np.clip(cif * cif_scale, 0.0, 1.0)
+    recal_diag: dict = {}
+    if config.B_RECAL_MODE == "per_cohort":
+        cohort_scales, recal_diag = survival.fit_cif_scales_per_cohort(
+            models, holdout, flag, cohort
+        )
+        loan_scale = survival.per_loan_scale(cohort, cohort_scales, fallback=cif_scale)
+        cif = np.clip(cif * loan_scale[:, None], 0.0, 1.0)
+    else:
+        cif = np.clip(cif * cif_scale, 0.0, 1.0)
 
     weeks = config.WEEKS
     abs_err_w = 0.0
@@ -215,6 +229,8 @@ def traj_proxy(models, holdout, labeled, budget) -> dict:
         "weighted_mae": float(model_mae),
         "naive_weighted_mae": float(naive_mae),
         "cif_scale": float(cif_scale),
+        "b_recal_mode": str(config.B_RECAL_MODE),
+        "per_cohort_recal": recal_diag,
         "norm_err": norm,
         "score": float(1.0 - norm),
         "n_cohorts": int(len(np.unique(cohort[np.isfinite(cohort)]))),
@@ -425,8 +441,15 @@ def _print_table(sc: dict) -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--compute", choices=compute_mod.LEVELS, default="med")
+    ap.add_argument(
+        "--b-recal", choices=("global", "per_cohort"), default=None,
+        help="override config.B_RECAL_MODE for the B/WS2 CIF recalibration "
+        "(arm-vs-arm comparisons)",
+    )
     ap.add_argument("--out", default=str(config.ARTIFACTS_DIR / "scorecard.json"))
     args = ap.parse_args(argv)
+    if args.b_recal is not None:
+        config.B_RECAL_MODE = args.b_recal
 
     config.ARTIFACTS_DIR.mkdir(exist_ok=True)
     sc = build_scorecard(args.compute)

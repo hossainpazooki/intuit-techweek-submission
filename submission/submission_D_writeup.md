@@ -146,6 +146,19 @@ collapses (§3), measured in one world rather than two.
   MAE gain trades a small but consistent increase in negative bias (g-comp bias
   more negative than naive on 5/5 seeds) — measured limits, not the exact
   real-data magnitudes.
-- **With another day:** fold the conformal recalibration into the *decision* (not
-  just reported PD) to close the gap to the $694K ranking optimum; per-cohort (not
-  global) OOT recalibration for B; bootstrap bands for C scaled by compute.
+- **Two "obvious next steps" are tested negatives, not future work.**
+  (a) *Conformal-into-the-decision:* re-pricing E[NPV] at the conformal upper PD
+  bound (`scripts/exp_conformal_decision.py`; out-of-fold, half-width fit on one
+  half of the funded holdout, realized P&L of the decisions on the disjoint
+  half, 10 splits × 2 orderings) cuts approval 0.60 → 0.19 and loses
+  **$137K ± $182K** per test half vs the timing rule (wins 7/20 splits) — a
+  coverage-calibrated *interval width* is not a decision-optimal shift.
+  (b) *Per-cohort OOT recalibration for B:* with empirical-Bayes shrinkage, the
+  method-of-moments between-cohort variance on the full holdout is exactly
+  **zero** (cohort spread fully explained by binomial noise at ~200
+  loans/cohort), so the estimator degenerates to the global factor; out-of-fold
+  (`scripts/eval_b_recal_oof.py`, 50 paired evals) per-cohort factors never win.
+  Both code paths ship dormant behind flags, with the experiments committed.
+- **With another day:** a *signed* OOT level correction in the decision rule
+  (the symmetric band above is the wrong shape, not the wrong idea); bootstrap
+  bands for C scaled by compute.
