@@ -24,6 +24,8 @@ intervention_queries.csv: (query_id, applicant_id, feature_name, intervention_va
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -121,8 +123,18 @@ def estimate_counterfactual(
             np.array([pop_point + 0.25]),
         )
         pop_lower, pop_point, pop_upper = float(pl[0]), float(pp[0]), float(pu[0])
-    except Exception:
+    except Exception as e:
         pop_point, pop_lower, pop_upper = 0.5, 0.0, 1.0
+        # A degenerate 0.5 band silently masks a broken ensemble -- surface it.
+        warnings.warn(
+            "estimate_counterfactual: population PD band fell back to a "
+            "degenerate [0.0, 0.5, 1.0] after a "
+            + type(e).__name__
+            + "; the ensemble may be broken and counterfactual fallbacks "
+            "will be uninformative.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     # Build every intervened RAW row first (per-row do() + descendant propagation),
     # then score them in ONE batched ensemble pass. This is numerically identical
@@ -137,6 +149,12 @@ def estimate_counterfactual(
     matched_idx: list[int] = []    # query index for each collected row
     result: dict = {}              # query_id -> (point, lower, upper)
 
+    # Observability: count per-query fallbacks to the population mean and track the
+    # distinct exception types that triggered them. A real wiring error in
+    # propagate_intervention would otherwise be swallowed silently.
+    n_fallback = 0
+    fallback_exc_types: set[str] = set()
+
     for i in range(len(qids)):
         pos = by_applicant.get(applicants[i])
         if pos is None:
@@ -146,8 +164,24 @@ def estimate_counterfactual(
             intervened = dag.propagate_intervention(df.iloc[[pos]].copy(), feats[i], vals[i])
             intervened_rows.append(intervened)
             matched_idx.append(i)
-        except Exception:
+        except Exception as e:
             result[qids[i]] = (pop_point, pop_lower, pop_upper)
+            n_fallback += 1
+            fallback_exc_types.add(type(e).__name__)
+
+    if n_fallback > 0:
+        warnings.warn(
+            "estimate_counterfactual: "
+            + str(n_fallback)
+            + " of "
+            + str(len(qids))
+            + " queries fell back to the population mean PD after intervention "
+            "propagation errors; exception types seen: "
+            + ", ".join(sorted(fallback_exc_types))
+            + ".",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     if intervened_rows:
         big = pd.concat(intervened_rows, ignore_index=True)

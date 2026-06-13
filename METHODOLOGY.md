@@ -247,7 +247,7 @@ point effect as if it were a solved causal quantity. The `closed-loop-default-
 detection` harness now demonstrates this exact limit empirically in its synthetic
 world: at full selection severity, backdoor adjustment cannot repair selection on an
 *unobserved* confounder — g-computation's advantage over naive conditioning collapses
-by nearly an order of magnitude to a negligible level (§9, WS4) — which is independent
+by nearly an order of magnitude to a negligible level (§12, WS4) — which is independent
 of, and does not soften, the real-data positivity caveat above.
 
 **Regulatory defense.** For each stated driver we would argue sign, magnitude, and
@@ -438,7 +438,7 @@ extension" (for the list just above) — never claim the research stack is built
    `prior_underwriter_score` is **excluded** from the outcome model and the IPW /
    reject-inference path is **removed** (§1a — positivity fails under the
    deterministic funding rule). Out-of-time recalibration of the *submitted* PDs is
-   carried by the **WS2/WS3** estimators in §9 (B: `survival.fit_cif_scale`;
+   carried by the **WS2/WS3** estimators in §12 (B: `survival.fit_cif_scale`;
    A: split-conformal band), which the proxy scorecard measures against. The
    isotonic `oot_iso` path (`config.APPLY_OOT_CALIBRATION`,
    `survival.predict_trajectory(oot_iso=)`) remains available as an alternative
@@ -448,7 +448,7 @@ extension" (for the list just above) — never claim the research stack is built
 
 ---
 
-## 9. Upgrade addendum — score-weighted optimization (WS1–WS5) [VALIDATED via proxy]
+## 12. Upgrade addendum — score-weighted optimization (WS1–WS5) [VALIDATED via proxy]
 
 A proxy scorecard (`scripts/run_scorecard.py` → `reports/scorecard.json`) now
 optimizes against the brief's published weights, measured where ground truth
