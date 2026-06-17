@@ -41,6 +41,17 @@ spine for all four deliverables. A single 3-class `HistGradientBoostingClassifie
 on a person-period expansion yields per-week hazards `h_d, h_p`; the competing-risks
 recursion gives `CIF_d(t)` and lifetime PD. Deliverables read off one fit. Stack
 is **sklearn-only** (HistGB + isotonic); features are all-float with NaN preserved.
+Every figure is proxy-measured on the out-of-time validation funded holdout
+(`scripts/run_scorecard.py`); the four deliverables land as:
+
+| Deliverable | Proxy metric (OOT funded holdout, n=2,551) | Result | Comparison |
+|---|---|---|---|
+| **A — policy** | realized portfolio NPV | **$603,817** (approve 59%) | flat $512,660 (27%); legacy/approve-all -$2.56M; oracle $4.75M |
+| **A — calibration** | 90% PD-band coverage @ mean width | **0.89 @ 0.134** | raw ensemble 0.80 @ 0.082 |
+| **B — trajectory** | cohort-weighted CDR MAE | **0.0150** | pre-recal 0.0207; naive train-marginal 0.0259 |
+| **C — counterfactual** | g-comp vs naive MAE (synthetic harness, sev 0.4) | **0.0857 vs 0.0991** | gap +0.0134, positive on 24/25 seeds |
+
+![Deliverable A: realized portfolio NPV on the 2,551-loan OOT funded holdout. The timing E[NPV] rule clears the flat break-even baseline by +$91K and turns the legacy book's -$2.56M into a profit, against a $4.75M hindsight ceiling.](reports/pnl_backtest.png)
 
 - **Deliverable A — timing-integrated NPV policy.** We replaced a flat
   break-even rule (`approve if PD < ~8.9%`) with an **expected-NPV rule that
@@ -92,17 +103,20 @@ structurally wrong (it ignores that intervening on a parent moves its children).
 A 5-seed pilot gave the same mean with a narrower interval — scaling confirmed
 the mean and exposed the variance the small sweep understated.
 
-The harness also measures where this stops working — as a **measured collapse
-curve**, not an asserted cliff. Sweeping severity over {0.4, 0.6, 0.8, 1.0}
-(paired seeds), the gap falls **+0.0133 → +0.0059 → +0.0050 → +0.0017**: most of
-the collapse happens across the same 0.4 → 0.6 boundary where the IPW frontier
-breaks (§4), then a noise-flat plateau, then the floor. At **full severity (1.0)**
-the 25-seed gap is **+0.0017 ± 0.0020 with sign flips on 5/25 seeds** — negligible
-and of no deployable value, and we claim none. This is the same limit that breaks
-the IPW selective-labels frontier between severity 0.4 and 0.6 (§4): estimators fit on approved rows whose conditionals are distorted by
-selection on an *unobserved* confounder. Backdoor adjustment cannot fix unobserved
-confounding; IPW cannot fix broken positivity — **one structural mechanism bounds
-both the observational reweighting fix and the causal estimator**, measured
+| Selection severity | naive MAE | g-comp MAE | gap (mean ± sd) | seeds gap > 0 |
+|---|---|---|---|---|
+| **0.4** (operating frontier) | 0.0991 | 0.0857 | **+0.0134 ± 0.0085** | **24 / 25** |
+| **1.0** (full unobs. confounding) | 0.1026 | 0.1009 | +0.0017 ± 0.0020 | 20 / 25 |
+
+The harness measures where this stops working as a **collapse curve**, not an
+asserted cliff: sweeping severity {0.4, 0.6, 0.8, 1.0} (paired seeds) the gap
+falls **+0.0133 → +0.0059 → +0.0050 → +0.0017**, most of it across the 0.4 → 0.6
+boundary where the IPW frontier also breaks (§4, fig. below), then a noise-flat
+plateau, then the floor. At **full severity** the advantage is negligible
+(+0.0017 ± 0.0020, sign-flipping on 5/25 seeds) and we claim none. One structural
+mechanism bounds both fixes: estimators fit on approved rows whose conditionals
+are distorted by selection on an *unobserved* confounder — backdoor adjustment
+cannot fix unobserved confounding, IPW cannot fix broken positivity — measured
 independently in the same synthetic world. **Regulator defense:** drivers are
 reported as interventional effects with the propagation made explicit and
 non-intervenable identity features (sector, vintage) refused — not raw
@@ -135,6 +149,8 @@ IPW holds declined-cohort ECE at **0.036 / 0.038 / 0.097** for severity
 0 / 0.2 / 0.4 (pass, seed 42), then fails at 0.6 (**0.244**) — an honest operating
 frontier at severity 0.4, the same boundary where the g-computation advantage
 collapses (§3), measured in one world rather than two.
+
+![Operating frontier in the closed-loop-default-detection harness: PD calibration error (ECE) on the declined applicants real data can never score, vs selection severity. IPW (the operating estimator) holds below the 0.10 target through severity 0.4, then all three estimators break together at 0.6 — the same boundary at which the §3 g-computation advantage collapses.](reports/clue_frontier_scm.png)
 
 ## 5. Limitations & what we'd do differently
 
